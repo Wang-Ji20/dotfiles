@@ -1,0 +1,16 @@
+[init]
+	defaultBranch = main
+
+[core]
+	excludesfile = ~/.config/git/ignore
+
+[credential "https://github.com"]
+	helper = 
+	helper = !gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !gh auth git-credential
+
+# Machine-local / identity configuration (GPG keys, email, work/personal overrides)
+[include]
+	path = ~/.gitconfig.local

@@ -1,0 +1,10 @@
+# Local Git configuration (copy to ~/.gitconfig.local)
+# Keep sensitive or machine-specific options (email, GPG keys) here.
+
+[user]
+	name = Your Name
+	email = your-email@example.com
+	signingkey = YOUR_GPG_KEY_ID
+
+[commit]
+	gpgsign = true

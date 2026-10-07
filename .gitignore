@@ -1,0 +1,20 @@
+# Machine-specific Fish universal variables
+.config/fish/fish_variables
+
+# Machine-specific Git identity / credentials
+.gitconfig.local
+
+# Editor temporary and swap files
+*.swp
+*.swo
+*.un~
+.netrwhist
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Backups and temporary files
+*.bak
+*.tmp
+*.orig

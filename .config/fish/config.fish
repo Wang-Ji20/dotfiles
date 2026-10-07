@@ -1,62 +1,61 @@
-# if status is-interactive
-    # Commands to run in interactive sessions can go here
-#     eval (zellij setup --generate-auto-start fish | string collect)
-# end
+# ~/.config/fish/config.fish
 
-# opam configuration
-source /root/.opam/opam-init/init.fish >/dev/null 2>/dev/null; or true
+# Environment variables
+set -gx EDITOR nvim
+set -gx VISUAL nvim
+
+# -----------------------------------------------------------------------------
+# Path configuration (idempotent, portable)
+# -----------------------------------------------------------------------------
+fish_add_path -m -p "$HOME/.local/bin"
 
 # pnpm
-set -gx PNPM_HOME '/root/.local/share/pnpm'
-if not string match -q -- "$PNPM_HOME/bin" $PATH
-  set -gx PATH "$PNPM_HOME/bin" $PATH
-end
-# pnpm end
+set -gx PNPM_HOME "$HOME/.local/share/pnpm"
+test -d "$PNPM_HOME/bin"; and fish_add_path -m -p "$PNPM_HOME/bin"
 
-# local
-set -gx LOCAL_HOME "/root/.local/bin"
-if not string match -q -- $LOCAL_HOME $PATH
-    set -gx PATH "$LOCAL_HOME" $PATH
-end
-# local end
+# Rust / Cargo
+set -q CARGO_HOME; or set -gx CARGO_HOME "$HOME/.cargo"
+test -d "$CARGO_HOME/bin"; and fish_add_path -m -p "$CARGO_HOME/bin"
+test -d "$CARGO_HOME/bin/bin"; and fish_add_path -m -p "$CARGO_HOME/bin/bin"
 
-# cargo
-set -gx CARGO_HOME "/root/.cargo/bin"
-if not string match -q -- $CARGO_HOME $PATH
-    set -gx PATH "$CARGO_HOME" $PATH
-end
-# cargo end
+# Haskell (ghcup / cabal)
+set -q GHCUP_INSTALL_BASE_PREFIX[1]; or set -gx GHCUP_INSTALL_BASE_PREFIX "$HOME"
+test -d "$HOME/.cabal/bin"; and fish_add_path -m -p "$HOME/.cabal/bin"
+test -d "$HOME/.ghcup/bin"; and fish_add_path -m -p "$HOME/.ghcup/bin"
 
-# cargo extra
-set -gx CARGO_HOME_EXTRA "/root/.cargo/bin/bin"
-if not string match -q -- $CARGO_HOME_EXTRA $PATH
-    set -gx PATH "$CARGO_HOME_EXTRA" $PATH
-end
-# cargo end
-
-
-set -gx ZED "/mnt/c/Users/Ji Wang/AppData/Local/Programs/Zed/bin"
-if not string match -q -- $VSCODE $PATH
-    set -gx PATH "$ZED" $PATH
+# OCaml / opam
+if test -f "$HOME/.opam/opam-init/init.fish"
+    source "$HOME/.opam/opam-init/init.fish" >/dev/null 2>&1; or true
 end
 
-set -q GHCUP_INSTALL_BASE_PREFIX[1]; or set GHCUP_INSTALL_BASE_PREFIX $HOME ; set -gx PATH $HOME/.cabal/bin /root/.ghcup/bin $PATH # ghcup-env
-
-# Preserve the original binaries
-function vim-old --wraps vim --description 'Original vim'
-    command vim $argv
+# WSL host binary integration (e.g. Zed editor)
+set -l zed_path "/mnt/c/Users/Ji Wang/AppData/Local/Programs/Zed/bin"
+if test -d "$zed_path"
+    fish_add_path -m -a "$zed_path"
 end
 
-function ed-old --wraps ed --description 'Original ed'
-    command ed $argv
-end
+# -----------------------------------------------------------------------------
+# Interactive session configuration
+# -----------------------------------------------------------------------------
+if status is-interactive
+    # Vi key bindings
+    set -g fish_key_bindings fish_vi_key_bindings
 
-# Remap vim and ed to Neovim
-function vim --wraps nvim --description 'alias vim to nvim'
-    command nvim $argv
-end
+    # Preserve original vim/ed binaries
+    function vim-old --wraps vim --description 'Original vim'
+        command vim $argv
+    end
 
-function ed --wraps nvim --description 'alias ed to nvim'
-    command nvim $argv
-end
+    function ed-old --wraps ed --description 'Original ed'
+        command ed $argv
+    end
 
+    # Remap vim and ed to Neovim
+    function vim --wraps nvim --description 'Alias vim to nvim'
+        command nvim $argv
+    end
+
+    function ed --wraps nvim --description 'Alias ed to nvim'
+        command nvim $argv
+    end
+end
