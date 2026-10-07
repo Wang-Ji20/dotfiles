@@ -1,0 +1,17 @@
+InlayHints:
+  BlockEnd: true
+CompileFlags:
+  Add: [-Wall, Werror]
+Diagnostics:
+  ClangTidy:
+    Add: [bugprone-*]
+---
+
+If:                               # Apply this config conditionally
+  PathMatch: [.*\.cpp, .*\.cc, .*\.cxx, .*\.hh, .*\.hpp, .*\.hxx]
+CompileFlags:
+  Add: [-xc++, --std=c++20]
+Diagnostics:
+  ClangTidy:
+    Add: [modernize*, abseil-*, performance-*, portability-*, readability-*, concurrency-*]
+  
