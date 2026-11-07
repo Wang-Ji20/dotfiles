@@ -1,0 +1,24 @@
+# openSUSE packages this config relies on. Installed by: ./install.sh --packages
+
+# Shell and terminal
+fish
+yazi
+
+# Editor (needs Neovim >= 0.12), plus what plugins and parsers need
+neovim
+ripgrep
+tree-sitter
+gcc
+make
+wl-clipboard
+nerdfonts-symbolsonly-fonts
+
+# Git and commit signing
+git
+gh
+pinentry-qt6
+
+# Language servers and C/C++ tooling
+clang-tools
+gopls
+lua-language-server

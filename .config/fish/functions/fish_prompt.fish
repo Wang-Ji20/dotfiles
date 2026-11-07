@@ -5,19 +5,22 @@ function fish_prompt --description 'Write out the prompt'
     if set -l git_branch (command git symbolic-ref HEAD 2>/dev/null | string replace refs/heads/ '')
         set git_branch (set_color -o blue)"$git_branch"
         set -l git_status
-        if not command git diff-index --quiet HEAD --
-            if set -l count (command git rev-list --count --left-right '@{u}...HEAD' 2>/dev/null)
-                echo $count | read -l behind ahead
-                if test "$ahead" -gt 0
-                    set git_status "$git_status"(set_color red)⬆
-                end
-                if test "$behind" -gt 0
-                    set git_status "$git_status"(set_color red)⬇
-                end
+        # Fails quietly when there is no upstream or no commit yet.
+        if set -l count (command git rev-list --count --left-right '@{u}...HEAD' 2>/dev/null)
+            echo $count | read -l behind ahead
+            if test "$ahead" -gt 0
+                set git_status "$git_status"(set_color red)⬆
             end
-            for i in (git status --porcelain | string sub -l 2 | sort | uniq)
+            if test "$behind" -gt 0
+                set git_status "$git_status"(set_color red)⬇
+            end
+        end
+        # `git status` works before the first commit, unlike anything comparing against HEAD.
+        set -l changes (command git status --porcelain 2>/dev/null | string sub -l 2 | sort -u)
+        if test (count $changes) -gt 0
+            for i in $changes
                 switch $i
-                    case "."
+                    case "A*"
                         set git_status "$git_status"(set_color green)✚
                     case " D"
                         set git_status "$git_status"(set_color red)✖
@@ -32,7 +35,7 @@ function fish_prompt --description 'Write out the prompt'
                 end
             end
         else
-            set git_status (set_color green):
+            set git_status "$git_status"(set_color green):
         end
         set git_info " (git $git_status$git_branch"(set_color white)")"
     end

@@ -2,6 +2,30 @@
 
 My dotfiles for Linux.
 
+## Install
+
+On openSUSE Tumbleweed (Leap's Neovim may be older than the 0.12 this config needs):
+
+```sh
+sudo zypper install git
+git clone https://github.com/Wang-Ji20/dotfiles.git ~/dotfiles
+cd ~/dotfiles
+./install.sh --dry-run     # preview
+./install.sh --packages    # install packages.txt, then symlink everything
+```
+
+Files are symlinked into `$HOME`. Anything replaced is saved in `~/.dotfiles-backup/<timestamp>/`.
+
+Then, on a new machine:
+
+- Create `~/.gitconfig.local` from `.gitconfig.local.example`, and import your GPG key.
+- Run `gh auth login`.
+- Change your shell with `chsh -s /usr/bin/fish`, then log out and back in.
+- Open `nvim` once to download plugins and parsers.
+- Optional language servers not packaged for openSUSE: `uv tool install pyright` and `pnpm add -g typescript-language-server typescript`.
+
+## Contents
+
 - **Fish Shell** (`~/.config/fish/`):
   - Vi key bindings (`fish_vi_key_bindings`).
   - Yazi shell integration (`y` command to navigate and change directory on quit).

@@ -73,7 +73,7 @@ require("render-markdown").setup()
 require("nvim-treesitter").install({
     "lua", "vim", "vimdoc", "query", "bash", "c", "cpp", "go", "rust",
     "python", "javascript", "typescript", "tsx", "json", "yaml", "toml",
-    "html", "css", "markdown", "markdown_inline",
+    "html", "css", "markdown", "markdown_inline", "latex",
 })
 
 -- Treesitter text objects and motions

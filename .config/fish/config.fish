@@ -28,10 +28,15 @@ if test -f "$HOME/.opam/opam-init/init.fish"
     source "$HOME/.opam/opam-init/init.fish" >/dev/null 2>&1; or true
 end
 
+# Go and Flutter
+test -d "$HOME/go/bin"; and fish_add_path -m -a "$HOME/go/bin"
+test -d "$HOME/flutter/bin"; and fish_add_path -m -a "$HOME/flutter/bin"
+
 # WSL host binary integration (e.g. Zed editor)
-set -l zed_path "/mnt/c/Users/Ji Wang/AppData/Local/Programs/Zed/bin"
-if test -d "$zed_path"
-    fish_add_path -m -a "$zed_path"
+if set -q WSL_DISTRO_NAME
+    for zed_path in /mnt/c/Users/*/AppData/Local/Programs/Zed/bin
+        fish_add_path -m -a "$zed_path"
+    end
 end
 
 # -----------------------------------------------------------------------------
