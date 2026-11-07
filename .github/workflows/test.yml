@@ -42,7 +42,9 @@ jobs:
 
       - name: Root with the system package manager
         run: |
-          # The checkout may belong to the runner's uid; the installer only links
-          # files owned by the current user or root.
+          # Container jobs set HOME=/github/home, owned by the runner's uid; the
+          # installer (correctly) refuses a $HOME that isn't the current user's.
+          export HOME=/root
+          # Same for the checkout: it only links files owned by the current user or root.
           cp -r "$GITHUB_WORKSPACE" /root/dotfiles
           cd /root/dotfiles && ./install.sh --profile lab --packages && ./install.sh --check --packages
