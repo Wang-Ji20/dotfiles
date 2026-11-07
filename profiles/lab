@@ -1,0 +1,2 @@
+# Shared lab servers: no sudo; tools go to ~/.local.
+fish toolchains nvim yazi git gh cpp lsp

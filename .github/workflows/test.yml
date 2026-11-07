@@ -1,0 +1,48 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - almalinux:9          # same glibc (2.34) and Python (3.9) as RHEL 9
+          - ubuntu:24.04
+          - debian:13
+          - opensuse/tumbleweed
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - name: Prerequisites (python3, git, sudo-less user)
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates
+          elif command -v zypper >/dev/null; then
+            zypper --non-interactive install python3 git-core shadow
+          else
+            dnf install -y python3 git-core shadow-utils
+          fi
+          useradd -m tester
+
+      - uses: actions/checkout@v4
+
+      - name: Unit and transaction tests
+        run: python3 -B -m unittest discover -s tests -t . -v
+
+      - name: Non-root, no sudo (lab servers)
+        run: |
+          cp -r "$GITHUB_WORKSPACE" /home/tester/dotfiles && chown -R tester: /home/tester/dotfiles
+          su tester -c 'cd ~/dotfiles && ./install.sh --profile lab --packages'
+          su tester -c 'cd ~/dotfiles && ./install.sh --check --packages'
+          su tester -c '~/.local/bin/fish -c "echo fish \$version; command -q nvim; and nvim --headless +qa"'
+
+      - name: Root with the system package manager
+        run: |
+          # The checkout may belong to the runner's uid; the installer only links
+          # files owned by the current user or root.
+          cp -r "$GITHUB_WORKSPACE" /root/dotfiles
+          cd /root/dotfiles && ./install.sh --profile lab --packages && ./install.sh --check --packages

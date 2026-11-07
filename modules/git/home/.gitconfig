@@ -4,12 +4,10 @@
 [core]
 	excludesfile = ~/.config/git/ignore
 
-[credential "https://github.com"]
-	helper = 
-	helper = !gh auth git-credential
-[credential "https://gist.github.com"]
-	helper = 
-	helper = !gh auth git-credential
+# Optional pieces linked by other dotfiles modules; Git skips missing includes.
+# (gh module: GitHub credential helper)
+[include]
+	path = ~/.config/git/gh.gitconfig
 
 # Machine-local / identity configuration (GPG keys, email, work/personal overrides)
 [include]

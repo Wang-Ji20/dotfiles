@@ -28,7 +28,6 @@ o.showmode = false
 o.laststatus = 3
 o.splitright = true
 o.splitbelow = true
-o.winborder = "rounded"
 o.pumheight = 12
 o.list = true
 o.listchars = "tab:» ,trail:·,nbsp:␣"
@@ -44,7 +43,6 @@ o.undofile = true
 o.swapfile = false
 o.confirm = true
 o.updatetime = 250
-o.completeopt = "menuone,noselect,popup"
 o.wildmode = "longest:full,full"
 
 if vim.fn.executable("rg") == 1 then
@@ -53,6 +51,21 @@ if vim.fn.executable("rg") == 1 then
 end
 
 vim.g.netrw_banner = 0
+
+-- Everything below needs Neovim 0.12 (vim.pack, vim.lsp.config, newer options).
+if vim.fn.has("nvim-0.12") == 0 then
+    vim.notify("init.lua: Neovim 0.12+ needed for plugins and LSP; loaded basic options only.", vim.log.levels.WARN)
+    return
+end
+
+o.winborder = "rounded"
+o.completeopt = "menuone,noselect,popup"
+
+-- vim.pack clones plugins with git.
+if vim.fn.executable("git") == 0 then
+    vim.notify("init.lua: git not found; skipping plugins.", vim.log.levels.WARN)
+    return
+end
 
 -- Plugins (built-in vim.pack) ---------------------------------------
 vim.pack.add({
@@ -69,12 +82,16 @@ require("mini.icons").setup()
 require("gitsigns").setup()
 require("render-markdown").setup()
 
--- Treesitter parsers (installed asynchronously; needs tree-sitter CLI + C compiler)
-require("nvim-treesitter").install({
-    "lua", "vim", "vimdoc", "query", "bash", "c", "cpp", "go", "rust",
-    "python", "javascript", "typescript", "tsx", "json", "yaml", "toml",
-    "html", "css", "markdown", "markdown_inline", "latex",
-})
+-- Treesitter parsers (installed asynchronously; needs tree-sitter CLI + C compiler).
+-- Without them Neovim still uses its bundled parsers and regex highlighting.
+local function has(exe) return vim.fn.executable(exe) == 1 end
+if has("tree-sitter") and (has("cc") or has("gcc") or has("clang")) then
+    require("nvim-treesitter").install({
+        "lua", "vim", "vimdoc", "query", "bash", "c", "cpp", "go", "rust",
+        "python", "javascript", "typescript", "tsx", "json", "yaml", "toml",
+        "html", "css", "markdown", "markdown_inline", "latex",
+    })
+end
 
 -- Treesitter text objects and motions
 require("nvim-treesitter-textobjects").setup({

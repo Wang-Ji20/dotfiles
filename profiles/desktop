@@ -1,0 +1,3 @@
+# Personal openSUSE workstation. With --packages, system packages go through sudo.
+option sudo
+fish toolchains sdkman grit nvim yazi git gh cpp lsp desktop

@@ -1,0 +1,8 @@
+# Included from ~/.gitconfig. Only linked when the gh module is selected,
+# so Git never calls a missing `gh`.
+[credential "https://github.com"]
+	helper =
+	helper = !gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !gh auth git-credential
