@@ -1,0 +1,201 @@
+# environment.toml — declarative description of my environment.
+#
+# What each machine should have, not how to get there. If something is not
+# declared here, it is not part of the environment.
+#
+#   1. machines   which machines exist and which groups each one gets
+#   2. groups     named sets of tools
+#   3. tools      how each tool is provided
+#   4. repos      extra zypper repositories
+#   5. links      files from config/ linked into $HOME
+#   6. secrets    per-machine state that never enters the repo
+#
+# Paths: "~/x" is under $HOME; other paths are relative to this repo.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Machines
+# ─────────────────────────────────────────────────────────────────────────────
+
+[machines.wsl]
+os          = "openSUSE Tumbleweed"
+arch        = "x86_64"
+user        = "root"
+sudo        = true
+login-shell = "fish"
+gpg-signing = true
+groups      = ["core", "build", "embedded", "ai", "wsl"]
+wsl-conf    = { user.default = "root", boot.systemd = true, interop.appendWindowsPath = false }
+links       = { "~/.aws" = "/mnt/c/Users/Ji Wang/.aws", "~/.azure" = "/mnt/c/Users/Ji Wang/.azure" }
+
+[machines.desktop]
+os          = "openSUSE Tumbleweed"
+arch        = "x86_64"
+user        = "jiwang"
+sudo        = true
+login-shell = "fish"
+gpg-signing = true
+groups      = ["core", "build", "embedded", "ai", "gui"]
+desktop     = "KDE Plasma (Wayland)"
+
+[machines.lab]                      # shared servers, incl. an EasyBuild/Lmod cluster
+os          = "RHEL 9 / Ubuntu"     # glibc >= 2.34
+arch        = "x86_64"
+sudo        = false
+login-shell = "bash"                # no chsh; interactive bash execs fish
+gpg-signing = false                 # no private keys on shared servers
+groups      = ["core", "ai"]
+provide     = ["system", "conda"]   # first that meets `min`; conda via pixi into ~/.pixi
+bootstrap   = ["pixi"]
+# Environment modules are never loaded; toolchains (foss, intel, NVHPC, ...)
+# belong to each project's job script.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Groups
+# ─────────────────────────────────────────────────────────────────────────────
+
+[groups]
+core     = ["fish", "nvim", "git", "gh", "rg", "yazi", "uv", "gcc", "tmux", "rsync", "zip",
+            "tree-sitter", "hf"]
+build    = ["go", "python", "java", "c++", "rust", "dotnet", "node", "pnpm", "lua", "haskell",
+            "ocaml", "r", "racket", "julia", "flutter", "duckdb"]
+embedded = ["cross-riscv64", "cross-aarch64", "mingw64", "qemu", "asm-dt"]
+ai       = ["claude", "codex", "pi", "agy"]
+gui      = ["calc", "wl-copy", "pinentry-qt6", "fonts", "vulkan-tools", "code", "edge",
+            "kdeconnect"]
+wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Tools
+# ─────────────────────────────────────────────────────────────────────────────
+# Each key names a provider. A tool may list several; a machine uses the ones
+# it can (zypper needs sudo; lab uses system, then conda).
+#   zypper    = [pkg, ...]          openSUSE packages
+#   conda     = "pkg"               conda-forge, `pixi global install`
+#   min       = "x.y"               oldest acceptable version
+#   repo      = "name"              zypper repo from section 4
+#   uv        = "pkg"               `uv tool install`
+#   uv-python = "version"           `uv python install`
+#   pnpm      = [pkg, ...]          `pnpm add -g`
+#   installer = "url"               official install script
+#   github    = "owner/repo"        latest release, file `asset`, into ~/.local/bin (or `bin`)
+#   rustup / sdkman / ghcup / opam / juliaup / git = ...       that manager's settings
+# Versions: always the latest (or the manager's "recommended"); `min` only guards
+# against system copies too old for the config.
+#   firewall  = "service"           firewalld service to open
+# Language servers come with their devkit; nvim enables them when on PATH.
+# Project-specific libraries (-devel headers, SDKs) are not part of the environment.
+
+[tools]
+# core
+fish        = { zypper = ["fish"],         conda = "fish",            min = "3.2" }
+nvim        = { zypper = ["neovim"],       conda = "nvim",            min = "0.12" }   # not conda "neovim"
+git         = { zypper = ["git"],          conda = "git" }
+gh          = { zypper = ["gh"],           conda = "gh" }
+rg          = { zypper = ["ripgrep"],      conda = "ripgrep" }
+yazi        = { zypper = ["yazi"],         conda = "yazi" }
+uv          = { zypper = ["python313-uv"], conda = "uv" }
+gcc         = { zypper = ["gcc"],          conda = "gcc" }
+tmux        = { zypper = ["tmux"],         conda = "tmux" }
+rsync       = { zypper = ["rsync"],        conda = "rsync" }
+zip         = { zypper = ["zip"],          conda = "zip" }
+tree-sitter = { zypper = ["tree-sitter"],  conda = "tree-sitter-cli", min = "0.25" }   # nvim parsers
+hf          = { uv = "huggingface_hub" }
+
+# build
+go      = { zypper = ["go", "gopls"] }
+python  = { uv-python = "latest", pnpm = ["pyright"] }
+java    = { sdkman = ["java", "gradle", "kotlin"] }                  # sdkman defaults (latest)
+"c++"   = { zypper = ["gcc-c++", "clang", "clang-tools", "cmake", "make", "meson", "gdb"] }
+rust    = { zypper = ["rustup"], rustup = { toolchains = ["stable"], components = ["rust-analyzer", "clippy", "rustfmt"] } }
+dotnet  = { zypper = ["dotnet-sdk-10.0"], repo = "microsoft-prod" }
+node    = { zypper = ["nodejs24", "npm24"], pnpm = ["typescript", "typescript-language-server"] }
+pnpm    = { github = "pnpm/pnpm", asset = "pnpm-linux-x64" }          # standalone binary; globals in ~/.local/share/pnpm
+lua     = { zypper = ["lua-language-server"] }
+haskell = { zypper = ["gmp-devel"], ghcup = ["ghc", "cabal", "stack", "hls"] }   # ghcup "recommended"
+ocaml   = { zypper = ["opam"], opam = { switch = "default" } }       # latest ocaml-base-compiler
+r       = { zypper = ["R-base", "R-base-devel"] }
+racket  = { zypper = ["racket"] }
+julia   = { juliaup = { channel = "release" } }
+flutter = { git = { url = "https://github.com/flutter/flutter", branch = "stable", path = "~/flutter" } }
+duckdb  = { github = "duckdb/duckdb", asset = "duckdb_cli-linux-amd64.zip" }
+
+# embedded
+cross-riscv64 = { zypper = ["cross-riscv64-gcc15", "cross-riscv64-binutils", "cross-riscv64-glibc-devel", "cross-riscv64-linux-glibc-devel"] }
+cross-aarch64 = { zypper = ["cross-aarch64-glibc-devel", "cross-aarch64-linux-glibc-devel", "cross-i386-linux-glibc-devel"] }   # sysroots for clang --target
+mingw64       = { zypper = ["mingw64-cross-gcc", "mingw64-cross-gcc-c++", "mingw64-cross-binutils", "mingw64-cross-pkgconf"] }
+qemu          = { zypper = ["qemu", "qemu-extra", "qemu-uefi-riscv64", "qemu-ovmf-x86_64", "qemu-hw-display-virtio-gpu"] }
+asm-dt        = { zypper = ["nasm", "dtc"] }
+
+# ai — standalone builds in $HOME (no node, no root)
+claude = { installer = "https://claude.ai/install.sh" }
+codex  = { github = "openai/codex", asset = "codex-x86_64-unknown-linux-musl.tar.gz" }
+pi     = { installer = "https://pi.dev/install.sh", conda = "pi-coding-agent" }
+agy    = { installer = "https://antigravity.google/cli/install.sh" }
+
+# gui
+calc         = { zypper = ["calc"] }
+wl-copy      = { zypper = ["wl-clipboard"] }
+pinentry-qt6 = { zypper = ["pinentry-qt6"] }
+fonts        = { zypper = ["google-noto-sans-fonts", "google-noto-serif-fonts", "google-noto-sans-cjk-fonts",
+                           "adobe-sourcehanserif-cn-fonts", "google-noto-coloremoji-fonts",
+                           "jetbrains-mono-fonts", "nerdfonts-symbolsonly-fonts"] }
+vulkan-tools = { zypper = ["vulkan-tools"] }
+code         = { zypper = ["code"], repo = "vscode" }       # settings via VS Code Settings Sync
+edge         = { zypper = ["microsoft-edge-stable"], repo = "edge" }
+kdeconnect   = { zypper = ["kdeconnect-kde"], firewall = "kdeconnect" }
+
+# wsl
+wsl-systemd = { zypper = ["patterns-wsl-systemd"] }
+wsl-gui     = { zypper = ["patterns-wsl-gui"] }
+
+# bootstrap (lab)
+pixi = { github = "prefix-dev/pixi", asset = "pixi-x86_64-unknown-linux-musl.tar.gz", bin = "~/.pixi/bin" }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Repos
+# ─────────────────────────────────────────────────────────────────────────────
+# Added on a machine only if one of its tools names it.
+
+[repos]
+vscode         = { url = "https://packages.microsoft.com/yumrepos/vscode",       key = "https://packages.microsoft.com/keys/microsoft.asc" }
+edge           = { url = "https://packages.microsoft.com/yumrepos/edge",         key = "https://packages.microsoft.com/keys/microsoft.asc" }
+microsoft-prod = { url = "https://packages.microsoft.com/opensuse/16/prod/",     key = "https://packages.microsoft.com/keys/microsoft.asc" }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Links
+# ─────────────────────────────────────────────────────────────────────────────
+# Same files on every machine; each one acts only if what it needs exists.
+# Directories are linked file by file, so programs can keep their own state
+# next to them (fish_variables, gh's hosts.yml) without it entering the repo.
+
+[links]
+"config/fish"         = "~/.config/fish"
+"config/bash"         = "~/.config/bash"
+"config/nvim"         = "~/.config/nvim"
+"config/git"          = "~/.config/git"
+"config/gh"           = "~/.config/gh"
+"config/clangd"       = "~/.config/clangd"
+"config/clang-format" = "~/.clang-format"
+"config/ssh/config"   = "~/.ssh/config"
+
+[bashrc]                            # the only line managed in ~/.bashrc
+line = "[ -f ~/.config/bash/dotfiles.bash ] && . ~/.config/bash/dotfiles.bash"
+
+[git-identity]                      # ~/.gitconfig, per machine: created if missing
+name       = "hortensia"
+signingkey = "F66030CED05EFED3"
+# commit.gpgsign = machines.<name>.gpg-signing; user.email asked on first run.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Secrets
+# ─────────────────────────────────────────────────────────────────────────────
+# Never in the repo; copied or created once per machine.
+
+[secrets]
+ssh-key   = "~/.ssh/id_ed25519"
+gpg-key   = "F66030CED05EFED3"             # machines with gpg-signing only
+git-email = "~/.gitconfig"
+gh-token  = "~/.config/gh/hosts.yml"       # gh auth login
+npm       = "~/.npmrc"
+ai-logins = ["claude", "codex", "pi", "agy"]
+cloud     = ["~/.aws", "~/.azure"]

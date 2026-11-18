@@ -1,0 +1,11 @@
+# ~/.config/git/config — shared on every machine.
+# Git also reads ~/.config/git/ignore (global ignores) automatically, and then
+# ~/.gitconfig, which is per machine and not in the repo: user.name/email,
+# user.signingkey, commit.gpgsign. `git config --global` writes there.
+
+[init]
+	defaultBranch = main
+
+# GitHub credentials through gh (git skips the include if it's missing).
+[include]
+	path = ~/.config/git/gh.gitconfig
