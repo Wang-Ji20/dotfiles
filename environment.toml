@@ -67,7 +67,7 @@ build    = ["go", "python", "java", "c++", "rust", "dotnet", "node", "pnpm", "lu
 embedded = ["cross-riscv64", "cross-aarch64", "mingw64", "qemu", "asm-dt"]
 ai       = ["claude", "codex", "pi", "agy"]
 gui      = ["ime", "calc", "wl-copy", "pinentry-qt6", "fonts", "vulkan-tools", "code", "edge",
-            "kdeconnect"]
+            "kdeconnect", "awatcher", "openvpn"]
 wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -152,6 +152,9 @@ vulkan-tools = { zypper = ["vulkan-tools"] }
 code         = { zypper = ["code"], repo = "vscode" }       # settings via VS Code Settings Sync
 edge         = { zypper = ["microsoft-edge-stable"], repo = "edge" }
 kdeconnect   = { zypper = ["kdeconnect-kde"], firewall = "kdeconnect" }
+openvpn      = { zypper = ["openvpn", "NetworkManager-openvpn", "plasma6-nm-openvpn"] }   # import .ovpn in Plasma's network settings
+awatcher     = { github = "2e3s/awatcher", asset = "awatcher-bundle.zip" }   # ActivityWatch server + web UI + tray in one binary;
+                                                                         # its window watcher works on KDE Wayland (KWin script)
 
 # wsl
 wsl-systemd = { zypper = ["patterns-wsl-systemd"] }
@@ -254,6 +257,13 @@ Name = "pinyin"
 [kde.settings."autostart/ibus-autostart.desktop"."Desktop Entry"]
 Hidden = true                                   # openSUSE starts ibus at login; fcitx5 replaces it
 
+[kde.settings."autostart/awatcher.desktop"."Desktop Entry"]   # ActivityWatch at login; UI at http://localhost:5600
+Type    = "Application"
+Name    = "ActivityWatch (awatcher)"
+Exec    = "awatcher"                            # ~/.local/bin is on the Plasma session PATH
+Icon    = "activitywatch"
+Comment = "Tracks active window and idle time"
+
 [kde.settings.dolphinrc.General]
 ShowFullPath = true
 
@@ -316,3 +326,4 @@ gh-token  = "~/.config/gh/hosts.yml"       # gh auth login
 npm       = "~/.npmrc"
 ai-logins = ["claude", "codex", "pi", "agy"]
 cloud     = ["~/.aws", "~/.azure"]
+vpn       = "/etc/NetworkManager/system-connections"   # imported .ovpn profiles, with their keys
