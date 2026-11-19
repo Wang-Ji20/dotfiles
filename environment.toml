@@ -9,7 +9,8 @@
 #   4. repos      extra zypper repositories
 #   5. links      files from config/ linked into $HOME
 #   6. kde        desktop settings, on machines whose `desktop` is KDE Plasma
-#   7. secrets    per-machine state that never enters the repo
+#   7. drivers    out-of-tree kernel modules, built and signed by DKMS
+#   8. secrets    per-machine state that never enters the repo
 #
 # Paths: "~/x" is under $HOME; other paths are relative to this repo.
 
@@ -37,6 +38,8 @@ login-shell = "fish"
 gpg-signing = true
 groups      = ["core", "build", "embedded", "ai", "gui"]
 desktop     = "KDE Plasma (Wayland)"
+hostname    = "cdi"                 # static: a DHCP-assigned one strands gpg's lock files
+drivers     = ["redmi-battery-care"]
 
 [machines.lab]                      # shared servers, incl. an EasyBuild/Lmod cluster
 os          = "RHEL 9 / Ubuntu"     # glibc >= 2.34
@@ -285,7 +288,18 @@ baloosearchEnabled = false
 locationsEnabled   = false
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Secrets
+# 7. Drivers
+# ─────────────────────────────────────────────────────────────────────────────
+# Kernel modules from system/<name>/ (with a dkms.conf). DKMS rebuilds them for
+# each new kernel and signs them with /var/lib/dkms/mok.pub, which is enrolled
+# once (a reboot into the blue MOK screen) so Secure Boot stays on. Installed
+# only where the DMI product name contains `hardware`; loaded at every boot.
+
+[drivers.redmi-battery-care]        # charge limit (firmware "battery care"), on at load
+hardware = "Redmi Book"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Secrets
 # ─────────────────────────────────────────────────────────────────────────────
 # Never in the repo, never copied: created fresh on each machine, the public
 # halves registered with GitHub. `apply` lists the ones still missing.

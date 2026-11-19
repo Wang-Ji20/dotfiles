@@ -234,6 +234,60 @@ def wsl_conf_steps(machine: dict) -> list[Step]:
     return [Step(f"/etc/wsl.conf: {', '.join(changes)} (takes effect after `wsl --shutdown`)", do)]
 
 
+def hostname_steps(machine: dict) -> list[Step]:
+    h = machine.get("hostname")
+    etc = Path("/etc/hostname")
+    if not h or (etc.exists() and etc.read_text().strip() == h):
+        return []
+    return [Step(f"hostname {h}", lambda: run(["sudo", "hostnamectl", "set-hostname", h]))]
+
+
+def driver_steps(spec: dict, machine: dict) -> list[Step]:
+    """[drivers]: DKMS modules from system/<name>/, signed with an enrolled MOK, loaded at boot."""
+    dmi = Path("/sys/class/dmi/id/product_name")
+    product = dmi.read_text() if dmi.exists() else ""
+    kernel = os.uname().release
+    steps: list[Step] = []
+    built = [n for n in machine.get("drivers", []) if spec["drivers"][n]["hardware"] in product]
+    for name in built:
+        src = REPO / "system" / name
+        conf = (src / "dkms.conf").read_text()
+        ver = re.search(r'PACKAGE_VERSION="([^"]+)"', conf)[1]
+        mod = re.search(r'BUILT_MODULE_NAME\[0\]="([^"]+)"', conf)[1]
+        dst = Path(f"/usr/src/{name}-{ver}")
+
+        pkgs = ["kernel-default-devel", "dkms", "mokutil"]
+        missing = [p for p in pkgs if p not in out(["rpm", "-q", "--qf", "%{NAME}\n", *pkgs]).split()]
+        if missing:
+            steps.append(Step(f"{name}: zypper install {' '.join(missing)}",
+                              lambda m=missing: run(["sudo", "zypper", "-n", "install", *m])))
+
+        files = sorted(p.name for p in src.iterdir() if p.is_file())
+        same = dst.is_dir() and sorted(p.name for p in dst.iterdir() if p.is_file()) == files and \
+            all((src / f).read_bytes() == (dst / f).read_bytes() for f in files)
+        dkms = shutil.which("dkms") or "/usr/sbin/dkms"   # sbin is not on a user's PATH
+        installed = "installed" in out([dkms, "status", "-m", name, "-v", ver, "-k", kernel])
+        if not same or not installed:
+            q = shlex.quote
+            steps.append(Step(f"{name}: dkms build + sign for {kernel}, load {mod}", lambda q=q, d=dst, s=src, n=name, v=ver, m=mod: (
+                run(f"sudo rm -rf {q(str(d))} && sudo cp -r {q(str(s))} {q(str(d))}"),
+                run(f"sudo dkms remove {n}/{v} --all >/dev/null 2>&1 || true"),
+                run(["sudo", "dkms", "install", f"{n}/{v}", "--force"]),
+                run(f"sudo modprobe -r {m} 2>/dev/null; sudo modprobe {m} || echo '    (loads after the MOK is enrolled)'"))))
+
+        load = Path(f"/etc/modules-load.d/{name}.conf")
+        if not load.exists() or load.read_text().strip() != mod:
+            steps.append(Step(f"{name}: load {mod} at boot", lambda l=load, m=mod:
+                              run(["sudo", "tee", str(l)], input=m + "\n", quiet=True)))
+
+    key = "/var/lib/dkms/mok.pub"
+    if built and "already enrolled" not in out(["mokutil", "--test-key", key]):
+        steps.append(Step("dkms: enroll signing key (pick a one-time password; reboot, then "
+                          "Enroll MOK -> Continue -> Yes -> password)",
+                          lambda: run(["sudo", "mokutil", "--import", key])))
+    return steps
+
+
 def kde_steps(spec: dict, machine: dict) -> list[Step]:
     """[kde] settings, on machines whose desktop is KDE Plasma (once Plasma is installed)."""
     if not str(machine.get("desktop", "")).startswith("KDE") or not have("kwriteconfig6"):
@@ -491,6 +545,11 @@ def validate(spec: dict) -> list[str]:
         for t in [t for g in v["groups"] for t in G.get(g, [])] + v.get("bootstrap", []):
             if t not in T:
                 errs.append(f"machine {m}: tool {t} has no [tools] entry")
+        for d in v.get("drivers", []):
+            if d not in spec.get("drivers", {}):
+                errs.append(f"machine {m}: driver {d} has no [drivers] entry")
+            elif not (REPO / "system" / d / "dkms.conf").exists():
+                errs.append(f"driver {d}: system/{d}/dkms.conf does not exist")
     for t, cfg in T.items():
         if "repo" in cfg and cfg["repo"] not in R:
             errs.append(f"tool {t}: unknown repo {cfg['repo']}")
@@ -526,7 +585,8 @@ def main() -> int:
     backup = HOME / ".dotfiles-backup" / time.strftime("%Y%m%d-%H%M%S")
     parts: list[tuple[str, Callable[[], list[Step]]]] = [
         ("links", lambda: link_steps(spec, backup) + bashrc_step(spec) + git_identity_steps(spec, machine) + machine_link_steps(machine)),
-        ("system", lambda: (wsl_conf_steps(machine) + zypper_steps(spec, tools)) if machine.get("sudo") else []),
+        ("system", lambda: (wsl_conf_steps(machine) + zypper_steps(spec, tools) + hostname_steps(machine)
+                            + driver_steps(spec, machine)) if machine.get("sudo") else []),
         ("tools", lambda: tool_steps(spec, machine, tools)),
         ("desktop", lambda: kde_steps(spec, machine)),
     ]

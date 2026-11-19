@@ -39,6 +39,11 @@ differs, so it also repairs drift. `--only links|system|tools|desktop` runs one 
   conda-forge through pixi into `~/.pixi`. Everything else (uv, pnpm, rustup, sdkman,
   ghcup, opam, juliaup, official installers, GitHub releases) installs into `$HOME`.
   Missing tools get their latest version; installed ones are left alone.
+- **Drivers.** Kernel modules in `system/<name>/` (see `[drivers]`) are built and signed
+  by DKMS, so Secure Boot stays on and new kernels rebuild them. The signing key is
+  enrolled once: `apply` runs `mokutil --import`, then reboot and confirm on the blue
+  MOK screen. `redmi-battery-care` caps charging (Redmi Book firmware "battery care");
+  toggle it live with `/sys/module/redmi_battery_care/parameters/enabled`.
 - **Lab servers** keep bash as the login shell; an interactive bash switches to fish.
   Escape hatch: `ssh -t host 'NOFISH=1 bash -l'`.
 
