@@ -66,7 +66,7 @@ build    = ["go", "python", "java", "c++", "rust", "dotnet", "node", "pnpm", "lu
 embedded = ["cross-riscv64", "cross-aarch64", "mingw64", "qemu", "asm-dt"]
 ai       = ["claude", "codex", "pi", "agy"]
 gui      = ["ime", "calc", "wl-copy", "pinentry-qt6", "fonts", "nerd-font", "vulkan-tools", "code", "edge",
-            "kdeconnect", "awatcher", "openvpn", "calibre", "zotero"]
+            "kdeconnect", "awatcher", "openvpn", "calibre", "zotero", "topdo"]
 wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -87,6 +87,8 @@ wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
 #   archive   = "url"               a .tar.* unpacked into `dir`, binary linked into bin; for
 #                                   programs that update themselves (left alone by --update)
 #   rustup / sdkman / ghcup / opam / juliaup / git = ...       that manager's settings
+#   git       = { url, branch, path, build = "cmd" }   clone; `build` runs in the checkout
+#               while the tool's command is missing, and again after each --update pull
 # Versions: always the latest (or the manager's "recommended"); `min` only guards
 # against system copies too old for the config.
 #   firewall  = "service"           firewalld service to open
@@ -148,7 +150,8 @@ wl-copy      = { zypper = ["wl-clipboard"] }
 pinentry-qt6 = { zypper = ["pinentry-qt6"] }
 fonts        = { zypper = ["google-noto-sans-fonts", "google-noto-serif-fonts", "google-noto-sans-cjk-fonts",
                            "adobe-sourcehanserif-cn-fonts", "google-noto-coloremoji-fonts",
-                           "jetbrains-mono-fonts", "nerdfonts-symbolsonly-fonts"] }
+                           "jetbrains-mono-fonts", "nerdfonts-symbolsonly-fonts",
+                           "google-poppins-fonts"] }    # Poppins: topdo's typeface
 nerd-font    = { github = "ryanoasis/nerd-fonts", asset = "JetBrainsMono.tar.xz", font = "~/.local/share/fonts/JetBrainsMonoNerd" }
                                                             # "JetBrainsMono Nerd Font (Mono)"; not in the repos
 vulkan-tools = { zypper = ["vulkan-tools"] }
@@ -161,13 +164,19 @@ awatcher     = { github = "2e3s/awatcher", asset = "awatcher-bundle.zip" }   # A
 calibre      = { zypper = ["calibre"] }
 zotero       = { archive = "https://www.zotero.org/download/client/dl?channel=release&platform=linux-x86_64", dir = "~/.local/share/zotero" }
                                                             # official build (not in the repos); updates itself
-
+                                                            # topdo: see [tools.topdo] below
 # wsl
 wsl-systemd = { zypper = ["patterns-wsl-systemd"] }
 wsl-gui     = { zypper = ["patterns-wsl-gui"] }
 
 # bootstrap (lab)
 pixi = { github = "prefix-dev/pixi", asset = "pixi-x86_64-unknown-linux-musl.tar.gz", bin = "~/.pixi/bin" }
+
+# The todo badge in the top bar, built from source into ~/.local. Plasma finds its QML module
+# through config/plasma-workspace/env/topdo.sh; config/plasmashell/panels.js places the badge.
+[tools.topdo]
+zypper = ["cmake", "ninja", "gcc-c++", "qt6-base-devel", "qt6-declarative-devel", "kf6-kwindowsystem-devel"]
+git    = { url = "https://github.com/Wang-Ji20/topdo", branch = "main", path = "~/.local/src/topdo", build = "cmake --preset release && cmake --build --preset release && cmake --install build/release --prefix ~/.local" }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. Repos

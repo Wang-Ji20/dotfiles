@@ -25,7 +25,7 @@ dock.lengthMode = "fit";
 dock.floating = true;
 dock.hiding = "dodgewindows";           // hides only when a window touches it
 
-// The menu bar: start menu, the focused app's menus, then tray and clock.
+// The menu bar: start menu, the focused app's menus, the topdo badge, then tray and clock.
 const bar = new Panel;
 bar.location = "top";
 bar.height = Math.round(gridUnit * 1.5);
@@ -34,7 +34,8 @@ const kickoff = bar.addWidget("org.kde.plasma.kickoff");
 kickoff.currentConfigGroup = ["General"];
 kickoff.writeConfig("icon", "start-here-branding");
 bar.addWidget("org.kde.plasma.appmenu");
-bar.addWidget("org.kde.plasma.panelspacer");
+const topdo = bar.addWidget("io.github.wangji20.topdo");  // the todo badge; fills the middle and centres itself
+topdo.globalShortcut = "Meta+Space";                        // opens its panel (Meta+T is KWin's tiles editor)
 bar.addWidget("org.kde.plasma.systemtray");
 const clock = bar.addWidget("org.kde.plasma.digitalclock");
 clock.currentConfigGroup = ["Appearance"];

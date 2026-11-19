@@ -582,7 +582,14 @@ def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
         if not path.exists():
             s.append(Step(f"{t}: git clone {g['url']} ({g['branch']}) -> {tilde(path)}",
                           lambda g=g, p=path: run(["git", "clone", "-b", g["branch"], g["url"], str(p)])))
+        if "build" in g and not have(t):
+            s.append(Step(f"{t}: build in {tilde(path)}", lambda g=g, p=path: build_checkout(p, g["build"])))
     return s
+
+
+def build_checkout(path: Path, command: str) -> None:
+    """A git tool's `build` command, run in its checkout."""
+    run(["bash", "-c", f"cd {shlex.quote(str(path))} && {command}"])
 
 
 # ── updates (--update) ───────────────────────────────────────────────────────
@@ -668,9 +675,16 @@ def update_steps(spec: dict, machine: dict, tools: list[str], dry_run: bool) -> 
         steps.append(Step("julia: juliaup self update, juliaup update",
                           lambda: (run(["juliaup", "self", "update"]), run(["juliaup", "update"]))))
     for t in users["git"]:
-        path = expand(T[t]["git"]["path"])
-        if (path / ".git").exists():
-            steps.append(Step(f"{t}: git pull --ff-only in {tilde(path)}", lambda p=path: run(["git", "-C", str(p), "pull", "--ff-only"])))
+        g = T[t]["git"]
+        path = expand(g["path"])
+        if not (path / ".git").exists():
+            continue
+        pull = lambda p=path: run(["git", "-C", str(p), "pull", "--ff-only"])
+        if "build" in g:
+            steps.append(Step(f"{t}: git pull --ff-only and build in {tilde(path)}",
+                              lambda p=path, c=g["build"], pull=pull: (pull(), build_checkout(p, c))))
+        else:
+            steps.append(Step(f"{t}: git pull --ff-only in {tilde(path)}", pull))
     return steps
 
 
