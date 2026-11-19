@@ -1,0 +1,16 @@
+#!/bin/bash
+# GPU usage on this machine, or on the Slurm cluster it belongs to.
+# Run from the PC with: lab <host> '~/.local/bin/gpu-status'
+echo "== $(hostname)  $(date '+%F %T')"
+
+# Machines with their own GPUs
+if command -v nvidia-smi >/dev/null; then
+    nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total \
+               --format=csv,noheader
+fi
+
+# Slurm clusters: free/used GPUs per partition, plus your own jobs
+if command -v sinfo >/dev/null; then
+    sinfo -O partition:20,nodes:6,statecompact:8,gres:30,gresused:30
+    squeue -u "$USER"
+fi

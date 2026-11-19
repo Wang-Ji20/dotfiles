@@ -1,0 +1,50 @@
+#!/usr/bin/expect -f
+# usage: lab <host>                   log in
+#        lab <host> '<command>'       run one command and exit with its status
+# The password comes from KWallet (folder "ssh", key <host>); the OTP is asked on
+# the terminal. Prompts go to stderr, so a command's output can be piped or saved.
+set host [lindex $argv 0]
+set cmd  [lrange $argv 1 end]
+if {$host eq ""} { puts stderr "usage: lab <host> \['<command>'\]"; exit 1 }
+
+set pw [exec kwallet-query -r $host -f ssh kdewallet]
+log_user 0
+set timeout 60
+if {$cmd eq ""} {
+    spawn -noecho ssh $host
+} else {
+    set stty_init -onlcr    ;# plain \n line endings in the output, no \r\n
+    spawn -noecho ssh -q $host {*}$cmd
+}
+
+expect {
+    -re "OTP:" {
+        puts -nonewline stderr "OTP for $host: "; flush stderr
+        expect_user -timeout -1 -re "(\[^\r\n]*)\n"
+        send -- "$expect_out(1,string)\r"
+        exp_continue
+    }
+    -re "assword:" {
+        if {[info exists sent]} { puts stderr "Password rejected."; exit 1 }
+        set sent 1
+        send -- "$pw\r"
+    }
+    timeout { puts stderr "Timed out."; exit 1 }
+    eof     { puts stderr "Connection closed before login."; exit 1 }
+}
+unset pw
+log_user 1
+
+if {$cmd eq ""} {
+    # Pass window resizes on to the server, so vim, htop and tmux draw correctly
+    trap {
+        set rows [stty rows]; set cols [stty columns]
+        stty rows $rows columns $cols < $spawn_out(slave,name)
+    } WINCH
+    interact
+} else {
+    set timeout -1
+    expect eof
+    catch wait result
+    exit [lindex $result 3]
+}

@@ -66,7 +66,7 @@ build    = ["go", "python", "java", "c++", "rust", "dotnet", "node", "pnpm", "lu
 embedded = ["cross-riscv64", "cross-aarch64", "mingw64", "qemu", "asm-dt"]
 ai       = ["claude", "codex", "pi", "agy"]
 gui      = ["ime", "calc", "wl-copy", "pinentry-qt6", "fonts", "nerd-font", "vulkan-tools", "code", "edge",
-            "kdeconnect", "awatcher", "openvpn", "calibre", "zotero", "topdo"]
+            "kdeconnect", "awatcher", "openvpn", "calibre", "zotero", "topdo", "expect"]
 wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -162,6 +162,7 @@ openvpn      = { zypper = ["openvpn", "NetworkManager-openvpn", "plasma6-nm-open
 awatcher     = { github = "2e3s/awatcher", asset = "awatcher-bundle.zip" }   # ActivityWatch server + web UI + tray in one binary;
                                                                          # its window watcher works on KDE Wayland (KWin script)
 calibre      = { zypper = ["calibre"] }
+expect       = { zypper = ["expect"] }
 zotero       = { archive = "https://www.zotero.org/download/client/dl?channel=release&platform=linux-x86_64", dir = "~/.local/share/zotero" }
                                                             # official build (not in the repos); updates itself
                                                             # topdo: see [tools.topdo] below
@@ -207,6 +208,7 @@ microsoft-prod = { url = "https://packages.microsoft.com/opensuse/16/prod/",    
 "config/clang-tidy"   = "~/.clang-tidy"     # default checks; a project's own .clang-tidy wins
 "config/ssh/config"   = "~/.ssh/config"
 "config/plasma-workspace" = "~/.config/plasma-workspace"   # sourced only by Plasma
+"config/bin"          = "~/.local/bin"            # own scripts, linked one by one
 
 [bashrc]                            # the only line managed in ~/.bashrc
 line = "[ -f ~/.config/bash/dotfiles.bash ] && . ~/.config/bash/dotfiles.bash"
