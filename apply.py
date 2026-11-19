@@ -364,7 +364,7 @@ def kde_steps(spec: dict, machine: dict) -> list[Step]:
         for group, keys in groups.items():
             g = os.path.expanduser(group)
             for k, v in keys.items():
-                val = str(v).lower() if isinstance(v, bool) else str(v)
+                val = str(v).lower() if isinstance(v, bool) else os.path.expanduser(str(v)) if str(v).startswith("~/") else str(v)
                 if read(f, g, k) != val:
                     args = ["kwriteconfig6", "--file", f, "--group", g, "--key", k,
                             *(["--type", "bool"] if isinstance(v, bool) else []), val]

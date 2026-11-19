@@ -261,7 +261,7 @@ Hidden = true                                   # openSUSE starts ibus at login;
 [kde.settings."autostart/awatcher.desktop"."Desktop Entry"]   # ActivityWatch at login; UI at http://localhost:5600
 Type    = "Application"
 Name    = "ActivityWatch (awatcher)"
-Exec    = "awatcher"                            # ~/.local/bin is on the Plasma session PATH
+Exec    = "~/.local/bin/awatcher"               # full path: the xdg-autostart generator's PATH lacks ~/.local/bin
 Icon    = "activitywatch"
 Comment = "Tracks active window and idle time"
 
