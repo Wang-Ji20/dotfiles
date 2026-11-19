@@ -453,6 +453,28 @@ def install_release(name: str, url: str, bindir: Path, unpack: Path | None = Non
     tmp.replace(dst)
 
 
+def latest_tag(repo: str) -> str:
+    """The tag GitHub's /releases/latest redirects to (no API call, no rate limit)."""
+    req = urllib.request.Request(f"https://github.com/{repo}/releases/latest", method="HEAD")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.geturl().rstrip("/").rsplit("/", 1)[-1]
+
+
+def installed_tag(t: str) -> str | None:
+    f = STATE / "releases" / t
+    return f.read_text().strip() if f.exists() else None
+
+
+def install_github(t: str, cfg: dict, tag: str | None = None) -> None:
+    """Latest (or the given) release of a `github` tool; its tag is remembered for --update."""
+    tag = tag or latest_tag(cfg["github"])
+    url = f"https://github.com/{cfg['github']}/releases/download/{tag}/{cfg['asset']}"
+    install_release(t, url, expand(cfg.get("bin", "~/.local/bin")), expand(cfg["dir"]) if "dir" in cfg else None)
+    f = STATE / "releases" / t
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(tag + "\n")
+
+
 def pick(name: str, items: list, base: Callable) -> object:
     for exact in (True, False):
         for it in items:
@@ -472,8 +494,7 @@ def tool_steps(spec: dict, machine: dict, tools: list[str]) -> list[Step]:
         cfg = T[t]
         bindir = expand(cfg.get("bin", "~/.local/bin"))
         if not (bindir / t).exists():
-            url = f"https://github.com/{cfg['github']}/releases/latest/download/{cfg['asset']}"
-            steps.append(Step(f"{t}: latest release -> {tilde(bindir)}", lambda t=t, u=url, b=bindir: install_release(t, u, b)))
+            steps.append(Step(f"{t}: latest release -> {tilde(bindir)}", lambda t=t, c=cfg: install_github(t, c)))
 
     # Tools that others are installed with (pnpm, uv) go first, or e.g. `pnpm add -g`
     # would run before pnpm itself is installed.
@@ -501,10 +522,9 @@ def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
     if "github" in cfg:
         bindir = expand(cfg.get("bin", "~/.local/bin"))
         if not have(t) and not (bindir / t).exists():
-            url = f"https://github.com/{cfg['github']}/releases/latest/download/{cfg['asset']}"
             unpack = expand(cfg["dir"]) if "dir" in cfg else None
             s.append(Step(f"{t}: latest {cfg['github']} release -> {tilde(unpack or bindir)}",
-                          lambda t=t, u=url, b=bindir, d=unpack: install_release(t, u, b, d)))
+                          lambda t=t, c=cfg: install_github(t, c)))
     # uv lists normalized names (huggingface_hub -> huggingface-hub).
     norm = lambda n: re.sub(r"[-_.]+", "-", n).lower()
     if "uv" in cfg and norm(cfg["uv"]) not in {norm(l.split()[0]) for l in out(["uv", "tool", "list"]).splitlines() if l and not l.startswith("-")}:
@@ -560,6 +580,95 @@ def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
             s.append(Step(f"{t}: git clone {g['url']} ({g['branch']}) -> {tilde(path)}",
                           lambda g=g, p=path: run(["git", "clone", "-b", g["branch"], g["url"], str(p)])))
     return s
+
+
+# ── updates (--update) ───────────────────────────────────────────────────────
+
+def update_steps(spec: dict, machine: dict, tools: list[str], dry_run: bool) -> list[Step]:
+    """Bring what this machine declares to the latest versions, one step per manager.
+    Tools are routed the way tool_steps installs them, so only managers in use run."""
+    T = spec["tools"]
+    sudo = machine.get("sudo", False)
+    provide = machine.get("provide", [])
+    via = lambda key: [t for t in tools if key in T[t]]
+    steps: list[Step] = []
+    shell = lambda c: run(["bash", "-c", c])
+
+    if sudo and via("zypper"):
+        # Tumbleweed is a rolling release: `dup`, not `update`. Snapper snapshots before and after.
+        cmd = ["sudo", "zypper", "dup"] if "Tumbleweed" in machine.get("os", "") else ["sudo", "zypper", "update"]
+        steps.append(Step(f"system packages: {shlex.join(cmd)}", lambda c=cmd: run(c)))
+    if not sudo and "conda" in provide and have("pixi"):
+        steps.append(Step("conda tools: pixi self-update, pixi global update",
+                          lambda: (run(["pixi", "self-update"]), run(["pixi", "global", "update"]))))
+
+    # Each tool the way it was installed (mirrors tool_steps' routing).
+    users = {k: [] for k in ("installer", "github", "uv", "uv-python", "pnpm", "rustup",
+                             "sdkman", "ghcup", "opam", "juliaup", "git")}
+    for t in tools:
+        cfg = T[t]
+        if sudo and "zypper" in cfg and not set(cfg) - {"zypper", "repo", "firewall", "min"}:
+            continue
+        if not sudo and "conda" in cfg and ("conda" in provide or ("system" in provide and meets(t, cfg.get("min")))):
+            continue
+        for k in users:
+            if k in cfg:
+                users[k].append(t)
+
+    for t in machine.get("bootstrap", []) + users["github"]:
+        cfg = T[t]
+        exe = expand(cfg.get("bin", "~/.local/bin")) / t
+        if not exe.exists():
+            continue                                   # not ours (e.g. a system copy)
+        try:
+            tag = latest_tag(cfg["github"])
+        except OSError as e:
+            print(f"  ({t}: cannot check {cfg['github']}: {e})")
+            continue
+        have_tag = installed_tag(t)
+        if have_tag is None and re.search(rf"(?<![\d.]){re.escape(tag.lstrip('v'))}(?![\d.])", out([str(exe), "--version"])):
+            have_tag = tag                             # installed before tags were recorded, already latest
+            if not dry_run:
+                (STATE / "releases").mkdir(parents=True, exist_ok=True)
+                (STATE / "releases" / t).write_text(tag + "\n")
+        if tag != have_tag:
+            steps.append(Step(f"{t}: {have_tag or 'unknown version'} -> {tag}",
+                              lambda t=t, c=cfg, g=tag: install_github(t, c, g)))
+    for t in users["installer"]:
+        if have(t):
+            if t == "claude":
+                steps.append(Step("claude: claude update", lambda: run(["claude", "update"])))
+            else:
+                steps.append(Step(f"{t}: rerun {T[t]['installer']}", lambda u=T[t]["installer"]: run_script(u)))
+    if users["uv"] and have("uv"):
+        steps.append(Step("uv tools: uv tool upgrade --all", lambda: run(["uv", "tool", "upgrade", "--all"])))
+    if users["uv-python"] and have("uv"):
+        steps.append(Step("python: uv python upgrade", lambda: run(["uv", "python", "upgrade"])))
+    if users["pnpm"] and have("pnpm"):
+        steps.append(Step("pnpm globals: pnpm update -g", lambda: run(["pnpm", "update", "-g"], env={"PNPM_HOME": str(PNPM_HOME)})))
+    if users["rustup"] and have("rustup"):
+        steps.append(Step("rust: rustup update", lambda: run(["rustup", "update"])))
+    if users["sdkman"] and (SDKMAN / "bin/sdkman-init.sh").exists():
+        cands = [c for t in users["sdkman"] for c in T[t]["sdkman"]]
+        init = f'source "{SDKMAN}/bin/sdkman-init.sh"'
+        steps.append(Step(f"sdkman: selfupdate, upgrade {' '.join(cands)}", lambda c=cands: run(
+            ["bash", "-c", f"{init} && sdk selfupdate && sdk update && " + " && ".join(f"sdk upgrade {x}" for x in c)],
+            input="y\n" * 20)))
+    ghcup = HOME / ".ghcup/bin/ghcup"
+    if users["ghcup"] and ghcup.exists():
+        gs = [g for t in users["ghcup"] for g in T[t]["ghcup"]]
+        steps.append(Step(f"haskell: ghcup upgrade, {' '.join(gs)} at recommended", lambda gs=gs: (
+            run([str(ghcup), "upgrade"]), *[run([str(ghcup), "install", g, "recommended", "--set"]) for g in gs])))
+    if users["opam"] and have("opam"):
+        steps.append(Step("ocaml: opam update, opam upgrade", lambda: shell("opam update -y && opam upgrade -y")))
+    if users["juliaup"] and have("juliaup"):
+        steps.append(Step("julia: juliaup self update, juliaup update",
+                          lambda: (run(["juliaup", "self", "update"]), run(["juliaup", "update"]))))
+    for t in users["git"]:
+        path = expand(T[t]["git"]["path"])
+        if (path / ".git").exists():
+            steps.append(Step(f"{t}: git pull --ff-only in {tilde(path)}", lambda p=path: run(["git", "-C", str(p), "pull", "--ff-only"])))
+    return steps
 
 
 # ── report ───────────────────────────────────────────────────────────────────
@@ -627,8 +736,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Make this machine match environment.toml.")
     ap.add_argument("--machine", help="machine name from environment.toml (remembered after the first run)")
     ap.add_argument("-n", "--dry-run", action="store_true", help="show what would change, change nothing")
-    ap.add_argument("--only", choices=["links", "system", "tools", "desktop"], help="run one part only")
+    ap.add_argument("-u", "--update", action="store_true",
+                    help="after applying, update everything declared here to the latest versions")
+    ap.add_argument("--only", choices=["links", "system", "tools", "desktop", "update"], help="run one part only")
     args = ap.parse_args()
+    args.update = args.update or args.only == "update"
 
     spec = tomllib.loads(SPEC.read_text())
     errs = validate(spec)
@@ -655,6 +767,8 @@ def main() -> int:
         ("tools", lambda: tool_steps(spec, machine, tools)),
         ("desktop", lambda: kde_steps(spec, machine)),
     ]
+    if args.update:
+        parts.append(("update", lambda: update_steps(spec, machine, tools, args.dry_run)))
 
     print(f"machine: {mname} ({', '.join(machine['groups'])})")
     rc_before = {f: f.read_text() if f.exists() else None for f in (HOME / ".bashrc", HOME / ".profile")}
@@ -662,6 +776,7 @@ def main() -> int:
         STATE.mkdir(parents=True, exist_ok=True)
         saved.write_text(mname + "\n")
     done: list[Step] = []
+    failed: list[str] = []
     for name, plan in parts:
         if args.only and args.only != name:
             continue
@@ -674,8 +789,12 @@ def main() -> int:
             try:
                 st.do()
                 done.append(st)
-            except Exception as e:  # stop at the first failure: later steps build on earlier ones
+            except Exception as e:
                 print(f"    FAILED: {type(e).__name__}: {e}")
+                if name == "update":         # updates are independent of each other: keep going
+                    failed.append(st.what)
+                    continue
+                # Stop at the first failure: later steps build on earlier ones.
                 print("\napply: stopped. Fix the cause and run ./apply again; finished steps are skipped.")
                 return 1
 
@@ -686,6 +805,11 @@ def main() -> int:
             after = f.read_text() if f.exists() else None
             if before is not None and after != before and args.only != "links":
                 print(f"\nnote: an installer changed {tilde(f)}; only the dotfiles line is wanted there.")
+
+    if failed:
+        print("\n== update: failed (the rest went ahead):\n  - " + "\n  - ".join(failed))
+    if not args.dry_run and any(st.what.startswith(("awatcher:", "system packages:")) for st in done):
+        print("\nnote: restart updated programs that were running (or reboot after a system update).")
 
     todo = secrets_report(spec, machine)
     if todo:
