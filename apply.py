@@ -258,6 +258,34 @@ def btrfs_quota_steps(machine: dict) -> list[Step]:
     return steps
 
 
+def kernel_args_steps(machine: dict) -> list[Step]:
+    """kernel-args = [...]: present in /etc/kernel/cmdline (a `key=` already there is replaced,
+    other args are kept), then sdbootutil rewrites the systemd-boot entries from it."""
+    want = machine.get("kernel-args", [])
+    path = Path("/etc/kernel/cmdline")
+    if not want or not path.exists():
+        return []
+    have_args = path.read_text().split()
+    args = list(have_args)
+    for a in want:
+        key = a.split("=", 1)[0]
+        same = [i for i, x in enumerate(args) if x.split("=", 1)[0] == key]
+        if same:
+            args[same[0]] = a
+            for i in reversed(same[1:]):
+                del args[i]
+        else:
+            args.append(a)
+    if args == have_args:
+        return []
+
+    def do() -> None:
+        run(["sudo", "tee", str(path)], input=" ".join(args) + "\n", quiet=True)
+        run(["sudo", "sdbootutil", "update-all-entries"])
+    added = [a for a in want if a not in have_args]
+    return [Step(f"kernel cmdline: {' '.join(added)} (takes effect next boot)", do)]
+
+
 def polkit_steps(machine: dict) -> list[Step]:
     """polkit = [...]: rule files from system/polkit/ copied into /etc/polkit-1/rules.d/."""
     steps: list[Step] = []
@@ -622,7 +650,8 @@ def main() -> int:
     parts: list[tuple[str, Callable[[], list[Step]]]] = [
         ("links", lambda: link_steps(spec, backup) + bashrc_step(spec) + git_identity_steps(spec, machine) + machine_link_steps(machine)),
         ("system", lambda: (wsl_conf_steps(machine) + zypper_steps(spec, tools) + hostname_steps(machine)
-                            + driver_steps(spec, machine) + btrfs_quota_steps(machine) + polkit_steps(machine)) if machine.get("sudo") else []),
+                            + driver_steps(spec, machine) + btrfs_quota_steps(machine) + polkit_steps(machine)
+                            + kernel_args_steps(machine)) if machine.get("sudo") else []),
         ("tools", lambda: tool_steps(spec, machine, tools)),
         ("desktop", lambda: kde_steps(spec, machine)),
     ]

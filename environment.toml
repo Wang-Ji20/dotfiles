@@ -42,6 +42,7 @@ hostname    = "cdi"                 # static: a DHCP-assigned one strands gpg's 
 drivers     = ["redmi-battery-care"]
 btrfs-quota = false                 # qgroups make snapper's snapshot deletes stall the system
 polkit      = ["50-firewalld-info.rules"]   # from system/polkit/ into /etc/polkit-1/rules.d/
+kernel-args = ["loglevel=3", "rd.udev.log_level=3", "systemd.show_status=auto"]  # quiet boot: hide firmware X.509 noise
 
 [machines.lab]                      # shared servers, incl. an EasyBuild/Lmod cluster
 os          = "RHEL 9 / Ubuntu"     # glibc >= 2.34
