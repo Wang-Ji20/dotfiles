@@ -58,7 +58,7 @@ function fish_prompt --description 'Write out the prompt'
     set -q fish_prompt_pwd_dir_length
     or set -lx fish_prompt_pwd_dir_length 0
 
-    set_color -b black
+    set_color -b normal
     printf '%s❰%s%s %s%s%s%s❱ ' \
         (set_color -o white) (set_color green) $USER \
         (set_color yellow) (prompt_pwd) \

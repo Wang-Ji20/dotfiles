@@ -3,7 +3,7 @@
 My environment, declared in one file and applied with one command.
 
 ```
-environment.toml   what each machine has: tools, config links, secrets to set up
+environment.toml   what each machine has: tools, config links, keys to create
 config/            the config files themselves, one folder per program
 apply              makes this machine match environment.toml
 ```
@@ -18,11 +18,12 @@ cd ~/dotfiles
 ```
 
 Machines: `wsl`, `desktop` (openSUSE, sudo), `lab` (shared servers, no sudo).
-Afterwards `apply` lists what has to be done by hand: SSH and GPG keys, `gh auth login`,
+Afterwards `apply` lists what has to be done by hand: create this machine's SSH and GPG
+keys (never copied between machines), `gh auth login`,
 logging in to the AI CLIs.
 
 Later runs need no arguments: `./apply` re-applies everything and changes only what
-differs, so it also repairs drift. `--only links|system|tools` runs one part.
+differs, so it also repairs drift. `--only links|system|tools|desktop` runs one part.
 
 ## How it works
 

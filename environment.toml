@@ -8,7 +8,8 @@
 #   3. tools      how each tool is provided
 #   4. repos      extra zypper repositories
 #   5. links      files from config/ linked into $HOME
-#   6. secrets    per-machine state that never enters the repo
+#   6. kde        desktop settings, on machines whose `desktop` is KDE Plasma
+#   7. secrets    per-machine state that never enters the repo
 #
 # Paths: "~/x" is under $HOME; other paths are relative to this repo.
 
@@ -60,7 +61,7 @@ build    = ["go", "python", "java", "c++", "rust", "dotnet", "node", "pnpm", "lu
             "ocaml", "r", "racket", "julia", "flutter", "duckdb"]
 embedded = ["cross-riscv64", "cross-aarch64", "mingw64", "qemu", "asm-dt"]
 ai       = ["claude", "codex", "pi", "agy"]
-gui      = ["calc", "wl-copy", "pinentry-qt6", "fonts", "vulkan-tools", "code", "edge",
+gui      = ["ime", "calc", "wl-copy", "pinentry-qt6", "fonts", "vulkan-tools", "code", "edge",
             "kdeconnect"]
 wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
 
@@ -78,6 +79,7 @@ wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
 #   pnpm      = [pkg, ...]          `pnpm add -g`
 #   installer = "url"               official install script
 #   github    = "owner/repo"        latest release, file `asset`, into ~/.local/bin (or `bin`)
+#               dir = "~/x"         unpack the whole archive there, link the binary into bin
 #   rustup / sdkman / ghcup / opam / juliaup / git = ...       that manager's settings
 # Versions: always the latest (or the manager's "recommended"); `min` only guards
 # against system copies too old for the config.
@@ -109,7 +111,7 @@ java    = { sdkman = ["java", "gradle", "kotlin"] }                  # sdkman de
 rust    = { zypper = ["rustup"], rustup = { toolchains = ["stable"], components = ["rust-analyzer", "clippy", "rustfmt"] } }
 dotnet  = { zypper = ["dotnet-sdk-10.0"], repo = "microsoft-prod" }
 node    = { zypper = ["nodejs24", "npm24"], pnpm = ["typescript", "typescript-language-server"] }
-pnpm    = { github = "pnpm/pnpm", asset = "pnpm-linux-x64" }          # standalone binary; globals in ~/.local/share/pnpm
+pnpm    = { github = "pnpm/pnpm", asset = "pnpm-linux-x64.tar.gz", dir = "~/.local/share/pnpm-cli" }   # binary + dist/; globals in ~/.local/share/pnpm
 lua     = { zypper = ["lua-language-server"] }
 haskell = { zypper = ["gmp-devel"], ghcup = ["ghc", "cabal", "stack", "hls"] }   # ghcup "recommended"
 ocaml   = { zypper = ["opam"], opam = { switch = "default" } }       # latest ocaml-base-compiler
@@ -117,7 +119,7 @@ r       = { zypper = ["R-base", "R-base-devel"] }
 racket  = { zypper = ["racket"] }
 julia   = { juliaup = { channel = "release" } }
 flutter = { git = { url = "https://github.com/flutter/flutter", branch = "stable", path = "~/flutter" } }
-duckdb  = { github = "duckdb/duckdb", asset = "duckdb_cli-linux-amd64.zip" }
+duckdb  = { github = "duckdb/duckdb", asset = "duckdb-cli-linux-amd64.tar.gz" }
 
 # embedded
 cross-riscv64 = { zypper = ["cross-riscv64-gcc15", "cross-riscv64-binutils", "cross-riscv64-glibc-devel", "cross-riscv64-linux-glibc-devel"] }
@@ -133,6 +135,8 @@ pi     = { installer = "https://pi.dev/install.sh", conda = "pi-coding-agent" }
 agy    = { installer = "https://antigravity.google/cli/install.sh" }
 
 # gui
+ime          = { zypper = ["fcitx5", "fcitx5-chinese-addons", "fcitx5-configtool-kcm6", "fcitx5-gtk3",
+                           "fcitx5-gtk4", "fcitx5-qt6"] }      # Pinyin; set up in [kde]
 calc         = { zypper = ["calc"] }
 wl-copy      = { zypper = ["wl-clipboard"] }
 pinentry-qt6 = { zypper = ["pinentry-qt6"] }
@@ -177,23 +181,118 @@ microsoft-prod = { url = "https://packages.microsoft.com/opensuse/16/prod/",    
 "config/clangd"       = "~/.config/clangd"
 "config/clang-format" = "~/.clang-format"
 "config/ssh/config"   = "~/.ssh/config"
+"config/plasma-workspace" = "~/.config/plasma-workspace"   # sourced only by Plasma
 
 [bashrc]                            # the only line managed in ~/.bashrc
 line = "[ -f ~/.config/bash/dotfiles.bash ] && . ~/.config/bash/dotfiles.bash"
 
 [git-identity]                      # ~/.gitconfig, per machine: created if missing
 name       = "hortensia"
-signingkey = "F66030CED05EFED3"
-# commit.gpgsign = machines.<name>.gpg-signing; user.email asked on first run.
+# user.email is asked on first run. With machines.<name>.gpg-signing, user.signingkey
+# is this machine's own gpg key for that email, and commit.gpgsign is on once it exists.
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Secrets
+# 6. KDE
 # ─────────────────────────────────────────────────────────────────────────────
-# Never in the repo; copied or created once per machine.
+# Only settings chosen on purpose, written key by key with kwriteconfig6: KDE
+# rewrites its rc files (a symlink would be replaced) and mixes in state like
+# window sizes. Not here: display scale, tiling, the panel (set by hand).
+#   [kde.settings.<file>.<group>]  key = value      file in ~/.config
+
+[kde]
+look-and-feel = "org.kde.breezedark.desktop"    # plasma-apply-lookandfeel: colours, icons, decorations
+
+[kde.settings.kdeglobals.General]               # fonts: CJK-capable UI font, JetBrains Mono
+font                 = "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0"
+menuFont             = "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0"
+toolBarFont          = "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0"
+smallestReadableFont = "Noto Sans CJK SC,8,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0"
+fixed                = "JetBrains Mono,9,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0"
+XftAntialias         = true
+XftHintStyle         = "hintslight"
+XftSubPixel          = "rgb"
+
+[kde.settings.kdeglobals.WM]
+activeFont = "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0"
+
+[kde.settings.kdeglobals.KDE]
+ShowDeleteCommand = false                       # only "Move to Trash" in context menus
+
+[kde.settings.kxkbrc.Layout]
+Options         = "caps:escape_shifted_capslock" # Caps = Esc, Shift+Caps = Caps Lock
+ResetOldOptions = true
+
+[kde.settings.kwinrc.Desktops]
+Number = 2
+Rows   = 2
+
+[kde.settings.kwinrc.Wayland]                   # KWin starts fcitx5 as the Wayland input method
+InputMethod = "/usr/share/applications/org.fcitx.Fcitx5.desktop"
+
+# fcitx5: English keyboard + Pinyin, Ctrl+Space switches. fcitx5 rewrites this
+# file on exit; set before its first start, it is kept.
+[kde.settings."fcitx5/profile"."Groups/0"]
+Name             = "Default"
+"Default Layout" = "us"
+DefaultIM        = "pinyin"
+
+[kde.settings."fcitx5/profile"."Groups/0/Items/0"]
+Name = "keyboard-us"
+
+[kde.settings."fcitx5/profile"."Groups/0/Items/1"]
+Name = "pinyin"
+
+[kde.settings."fcitx5/profile".GroupOrder]
+0 = "Default"
+
+[kde.settings."autostart/ibus-autostart.desktop"."Desktop Entry"]
+Hidden = true                                   # openSUSE starts ibus at login; fcitx5 replaces it
+
+[kde.settings.dolphinrc.General]
+ShowFullPath = true
+
+[kde.settings.dolphinrc.ContentDisplay]
+DirectorySizeMode     = "ContentSize"
+UseShortRelativeDates = false
+
+[kde.settings.dolphinrc.MainWindow]
+MenuBar = "Disabled"
+
+[kde.settings.konsolerc.MainWindow]
+MenuBar = "Disabled"
+
+[kde.settings.konsolerc.TabBar]
+TabBarVisibility = "AlwaysShowTabBar"
+NewTabButton     = true
+SearchTabsButton = "HideSearchTabsButton"
+
+[kde.settings.kiorc.Confirmations]
+ConfirmDelete     = true
+ConfirmEmptyTrash = true
+ConfirmTrash      = false
+
+[kde.settings.kiorc."Executable scripts"]
+behaviourOnLaunch = "alwaysAsk"
+
+[kde.settings.ktrashrc."~/.local/share/Trash"]   # empty after 7 days, at most 10% of the disk
+UseTimeLimit = true
+Days         = 7
+UseSizeLimit = true
+Percent      = 10
+
+[kde.settings.krunnerrc.Plugins]
+baloosearchEnabled = false
+locationsEnabled   = false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Secrets
+# ─────────────────────────────────────────────────────────────────────────────
+# Never in the repo, never copied: created fresh on each machine, the public
+# halves registered with GitHub. `apply` lists the ones still missing.
 
 [secrets]
-ssh-key   = "~/.ssh/id_ed25519"
-gpg-key   = "F66030CED05EFED3"             # machines with gpg-signing only
+ssh-key   = "~/.ssh/id_ed25519"              # ssh-keygen, then gh auth login uploads it
+gpg-key   = "per machine"                   # machines with gpg-signing only; see [git-identity]
 git-email = "~/.gitconfig"
 gh-token  = "~/.config/gh/hosts.yml"       # gh auth login
 npm       = "~/.npmrc"

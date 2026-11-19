@@ -14,6 +14,9 @@ done
 PATH="$HOME/.local/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
     echo "apply: no Python 3.11+, installing uv to ~/.local/bin" >&2
-    curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >&2
+    tmp=$(mktemp)
+    curl -LsSf https://astral.sh/uv/install.sh -o "$tmp"   # download first: a pipe would hide a network error
+    env UV_NO_MODIFY_PATH=1 sh "$tmp" >&2
+    rm -f "$tmp"
 fi
 exec uv run --no-project --python '>=3.11' python -B "$here/apply.py" "$@"

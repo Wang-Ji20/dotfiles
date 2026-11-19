@@ -18,7 +18,6 @@ import sys
 import tarfile
 import time
 import tomllib
-import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -158,11 +157,14 @@ def git_identity_steps(spec: dict, machine: dict) -> list[Step]:
     # ~/.gitconfig is the per-machine file. It must exist before `git config --global`
     # runs, or git would write into ~/.config/git/config, i.e. into this repo.
     gc = HOME / ".gitconfig"
-    want = {"user.name": spec["git-identity"]["name"],
-            "commit.gpgsign": "true" if machine.get("gpg-signing") else "false"}
-    if machine.get("gpg-signing"):
-        want["user.signingkey"] = spec["git-identity"]["signingkey"]
-    current = {k: out(["git", "config", "--file", str(gc), k]).strip() for k in [*want, "user.email"]} if gc.exists() else {}
+    keys = ("user.name", "user.email", "user.signingkey", "commit.gpgsign")
+    current = {k: out(["git", "config", "--file", str(gc), k]).strip() for k in keys} if gc.exists() else {}
+    want = {"user.name": spec["git-identity"]["name"]}
+    # Sign only once this machine has its own key; signing without one breaks every commit.
+    key = gpg_key(current.get("user.email", "")) if machine.get("gpg-signing") else None
+    if key:
+        want["user.signingkey"] = key
+    want["commit.gpgsign"] = "true" if key else "false"
     steps = [Step(f"~/.gitconfig: {k} = {v}", (lambda k=k, v=v: (gc.touch(), run(["git", "config", "--file", str(gc), k, v]))))
              for k, v in want.items() if current.get(k) != v]
 
@@ -175,6 +177,18 @@ def git_identity_steps(spec: dict, machine: dict) -> list[Step]:
             run(["git", "config", "--file", str(gc), "user.email", email])
         steps.append(Step("~/.gitconfig: user.email (asked)", ask))
     return steps
+
+
+def gpg_key(email: str) -> str | None:
+    """Newest usable signing key on this machine for `email`, or None."""
+    if not email:
+        return None
+    found = None
+    for line in out(["gpg", "--list-secret-keys", "--with-colons", f"<{email}>"]).splitlines():
+        f = line.split(":")
+        if f[0] == "sec" and f[1] not in ("r", "e", "d", "i") and "S" in f[11]:
+            found = f[4]
+    return found
 
 
 def machine_link_steps(machine: dict) -> list[Step]:
@@ -220,6 +234,29 @@ def wsl_conf_steps(machine: dict) -> list[Step]:
     return [Step(f"/etc/wsl.conf: {', '.join(changes)} (takes effect after `wsl --shutdown`)", do)]
 
 
+def kde_steps(spec: dict, machine: dict) -> list[Step]:
+    """[kde] settings, on machines whose desktop is KDE Plasma (once Plasma is installed)."""
+    if not str(machine.get("desktop", "")).startswith("KDE") or not have("kwriteconfig6"):
+        return []
+    kde = spec.get("kde", {})
+    read = lambda f, g, k: out(["kreadconfig6", "--file", f, "--group", g, "--key", k]).rstrip("\n")
+    steps: list[Step] = []
+    laf = kde.get("look-and-feel")
+    if laf and read("kdeglobals", "KDE", "LookAndFeelPackage") != laf:
+        steps.append(Step(f"kde: look and feel {laf}", lambda: run(["plasma-apply-lookandfeel", "-a", laf])))
+    for f, groups in kde.get("settings", {}).items():
+        for group, keys in groups.items():
+            g = os.path.expanduser(group)
+            for k, v in keys.items():
+                val = str(v).lower() if isinstance(v, bool) else str(v)
+                if read(f, g, k) != val:
+                    args = ["kwriteconfig6", "--file", f, "--group", g, "--key", k,
+                            *(["--type", "bool"] if isinstance(v, bool) else []), val]
+                    steps.append(Step(f"kde: {f} [{tilde(Path(g)) if g.startswith('/') else g}] {k} = {val}",
+                                      lambda a=args: run(a)))
+    return steps
+
+
 def zypper_steps(spec: dict, tools: list[str]) -> list[Step]:
     T = spec["tools"]
     steps: list[Step] = []
@@ -258,11 +295,31 @@ def fetch(url: str) -> bytes:
         return r.read()
 
 
-def install_release(name: str, url: str, bindir: Path) -> None:
-    """Download a binary, .tar.gz or .zip and put the executable `name` into bindir."""
+def run_script(url: str, *args: str, shell: str = "bash") -> None:
+    """Official install script: download it fully first, then run it."""
+    run([shell, "-s", "--", *args], input=fetch(url).decode())
+
+
+def install_release(name: str, url: str, bindir: Path, unpack: Path | None = None) -> None:
+    """Download a binary, .tar.gz or .zip and put the executable `name` into bindir.
+    With `unpack`, the whole archive goes there (for programs that need files next
+    to them) and bindir gets a symlink to `name` inside it."""
     data = fetch(url)
     bindir.mkdir(parents=True, exist_ok=True)
     dst = bindir / name
+    if unpack:
+        tmpdir = unpack.with_name(unpack.name + ".tmp")
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        tmpdir.mkdir(parents=True)
+        with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+            tf.extractall(tmpdir, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
+        if not (tmpdir / name).is_file():
+            raise Failed(f"no {name} at the top of the download")
+        shutil.rmtree(unpack, ignore_errors=True)
+        tmpdir.replace(unpack)
+        dst.unlink(missing_ok=True)
+        dst.symlink_to(unpack / name)
+        return
     if url.endswith((".tar.gz", ".tgz", ".tar.xz")):
         with tarfile.open(fileobj=io.BytesIO(data)) as tf:
             members = [m for m in tf.getmembers() if m.isfile()]
@@ -302,7 +359,10 @@ def tool_steps(spec: dict, machine: dict, tools: list[str]) -> list[Step]:
             url = f"https://github.com/{cfg['github']}/releases/latest/download/{cfg['asset']}"
             steps.append(Step(f"{t}: latest release -> {tilde(bindir)}", lambda t=t, u=url, b=bindir: install_release(t, u, b)))
 
-    for t in tools:
+    # Tools that others are installed with (pnpm, uv) go first, or e.g. `pnpm add -g`
+    # would run before pnpm itself is installed.
+    providers = {k for t in tools for k in T[t]} & set(tools)
+    for t in sorted(tools, key=lambda t: t not in providers):
         cfg = T[t]
         # Tools covered by zypper on sudo machines are handled in zypper_steps.
         if sudo and "zypper" in cfg and not set(cfg) - {"zypper", "repo", "firewall", "min"}:
@@ -321,13 +381,14 @@ def tool_steps(spec: dict, machine: dict, tools: list[str]) -> list[Step]:
 def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
     s: list[Step] = []
     if "installer" in cfg and not have(t):
-        s.append(Step(f"{t}: run {cfg['installer']}", lambda u=cfg["installer"]: run(f"curl -fsSL {shlex.quote(u)} | bash")))
+        s.append(Step(f"{t}: run {cfg['installer']}", lambda u=cfg["installer"]: run_script(u)))
     if "github" in cfg:
         bindir = expand(cfg.get("bin", "~/.local/bin"))
         if not have(t) and not (bindir / t).exists():
             url = f"https://github.com/{cfg['github']}/releases/latest/download/{cfg['asset']}"
-            s.append(Step(f"{t}: latest {cfg['github']} release -> {tilde(bindir)}",
-                          lambda t=t, u=url, b=bindir: install_release(t, u, b)))
+            unpack = expand(cfg["dir"]) if "dir" in cfg else None
+            s.append(Step(f"{t}: latest {cfg['github']} release -> {tilde(unpack or bindir)}",
+                          lambda t=t, u=url, b=bindir, d=unpack: install_release(t, u, b, d)))
     if "uv" in cfg and cfg["uv"] not in out(["uv", "tool", "list"]):
         s.append(Step(f"{t}: uv tool install {cfg['uv']}", lambda p=cfg["uv"]: run(["uv", "tool", "install", p])))
     if "uv-python" in cfg and not out(["uv", "python", "list", "--only-installed"]).strip():
@@ -351,7 +412,7 @@ def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
     if "sdkman" in cfg:
         if not (SDKMAN / "bin/sdkman-init.sh").exists():
             s.append(Step("sdkman: install (no shell rc edits)",
-                          lambda: run('curl -fsSL "https://get.sdkman.io?rcupdate=false" | bash')))
+                          lambda: run_script("https://get.sdkman.io?rcupdate=false")))
         for c in cfg["sdkman"]:
             if not (SDKMAN / "candidates" / c / "current").exists():
                 s.append(Step(f"{t}: sdk install {c}", lambda c=c: run(
@@ -373,7 +434,7 @@ def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
             s.append(Step(f"{t}: opam switch create {sw} (latest ocaml)",
                           lambda sw=sw: run(["opam", "switch", "create", sw, "ocaml-base-compiler", "-y"])))
     if "juliaup" in cfg and not have("juliaup"):
-        s.append(Step(f"{t}: juliaup", lambda: run("curl -fsSL https://install.julialang.org | sh -s -- --yes --add-to-path=no")))
+        s.append(Step(f"{t}: juliaup", lambda: run_script("https://install.julialang.org", "--yes", "--add-to-path=no", shell="sh")))
     if "git" in cfg:
         g = cfg["git"]
         path = expand(g["path"])
@@ -386,14 +447,21 @@ def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
 # ── report ───────────────────────────────────────────────────────────────────
 
 def secrets_report(spec: dict, machine: dict) -> list[str]:
+    # Keys are created fresh on each machine and registered with GitHub; nothing is copied.
     todo = []
-    if not (HOME / ".ssh/id_ed25519").exists():
-        todo.append("ssh key: copy ~/.ssh/id_ed25519 (+ .pub) or create one")
-    key = spec["secrets"]["gpg-key"]
-    if machine.get("gpg-signing") and key not in out(["gpg", "--list-secret-keys", "--keyid-format", "long"]):
-        todo.append(f"gpg key {key}: gpg --export-secret-keys {key} on another machine, gpg --import here")
+    ssh = expand(spec["secrets"]["ssh-key"])
+    if not ssh.exists():
+        todo.append(f"ssh key: ssh-keygen -t ed25519 -f {tilde(ssh)}")
     if not (HOME / ".config/gh/hosts.yml").exists():
-        todo.append("gh: gh auth login")
+        todo.append("gh: gh auth login   (offers to upload the ssh key)")
+    if machine.get("gpg-signing"):
+        gc = HOME / ".gitconfig"
+        email = out(["git", "config", "--file", str(gc), "user.email"]).strip() if gc.exists() else ""
+        if email and not gpg_key(email):
+            name = spec["git-identity"]["name"]
+            todo.append(f"gpg key: gpg --quick-gen-key '{name} <{email}>' ed25519 sign 2y\n"
+                        f"      gh auth refresh -s admin:gpg_key && gpg --armor --export {email} | gh gpg-key add -\n"
+                        f"      then ./apply again to turn on commit signing")
     ai = [t for t in spec["secrets"].get("ai-logins", []) if t in machine_tools(spec, machine)]
     if ai:
         todo.append(f"log in once: {', '.join(ai)}")
@@ -436,7 +504,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Make this machine match environment.toml.")
     ap.add_argument("--machine", help="machine name from environment.toml (remembered after the first run)")
     ap.add_argument("-n", "--dry-run", action="store_true", help="show what would change, change nothing")
-    ap.add_argument("--only", choices=["links", "system", "tools"], help="run one part only")
+    ap.add_argument("--only", choices=["links", "system", "tools", "desktop"], help="run one part only")
     args = ap.parse_args()
 
     spec = tomllib.loads(SPEC.read_text())
@@ -460,11 +528,15 @@ def main() -> int:
         ("links", lambda: link_steps(spec, backup) + bashrc_step(spec) + git_identity_steps(spec, machine) + machine_link_steps(machine)),
         ("system", lambda: (wsl_conf_steps(machine) + zypper_steps(spec, tools)) if machine.get("sudo") else []),
         ("tools", lambda: tool_steps(spec, machine, tools)),
+        ("desktop", lambda: kde_steps(spec, machine)),
     ]
 
     print(f"machine: {mname} ({', '.join(machine['groups'])})")
     rc_before = {f: f.read_text() if f.exists() else None for f in (HOME / ".bashrc", HOME / ".profile")}
-    failed = 0
+    if not args.dry_run:
+        STATE.mkdir(parents=True, exist_ok=True)
+        saved.write_text(mname + "\n")
+    done: list[Step] = []
     for name, plan in parts:
         if args.only and args.only != name:
             continue
@@ -476,13 +548,15 @@ def main() -> int:
                 continue
             try:
                 st.do()
-            except (Failed, OSError, urllib.error.URLError) as e:
-                failed += 1
-                print(f"    FAILED: {e}")
+                done.append(st)
+            except Exception as e:  # stop at the first failure: later steps build on earlier ones
+                print(f"    FAILED: {type(e).__name__}: {e}")
+                print("\napply: stopped. Fix the cause and run ./apply again; finished steps are skipped.")
+                return 1
 
+    if not args.dry_run and any(st.what.startswith("kde:") for st in done):
+        print("\nnote: log out and back in for all KDE settings to take effect.")
     if not args.dry_run:
-        STATE.mkdir(parents=True, exist_ok=True)
-        saved.write_text(mname + "\n")
         for f, before in rc_before.items():
             after = f.read_text() if f.exists() else None
             if before is not None and after != before and args.only != "links":
@@ -493,9 +567,7 @@ def main() -> int:
         print("\n== by hand (secrets, not in the repo):")
         for t in todo:
             print(f"  - {t}")
-    if failed:
-        print(f"\n{failed} step(s) failed.")
-    return 1 if failed else 0
+    return 0
 
 
 if __name__ == "__main__":
