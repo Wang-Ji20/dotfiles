@@ -1,0 +1,11 @@
+# Default clang-tidy checks for C and C++ in any project under $HOME (linked to ~/.clang-tidy).
+# A project's own .clang-tidy replaces this file, so projects can choose stricter or looser sets;
+# clangd and the clang-tidy command both read it.
+Checks: >
+  bugprone-*,
+  modernize-*,
+  abseil-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  concurrency-*

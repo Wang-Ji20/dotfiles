@@ -22,3 +22,7 @@ shopt -s histappend
 # Same as fish's ll / la functions.
 alias ll='ls -lh'
 alias la='ls -lAh'
+
+# Same as fish's code function: on KDE, VS Code through XWayland so its menu
+# goes to Plasma's top bar.
+[ "$XDG_CURRENT_DESKTOP" = KDE ] && code() { command code --ozone-platform=x11 "$@"; }

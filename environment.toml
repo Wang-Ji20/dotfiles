@@ -9,8 +9,7 @@
 #   4. repos      extra zypper repositories
 #   5. links      files from config/ linked into $HOME
 #   6. kde        desktop settings, on machines whose `desktop` is KDE Plasma
-#   7. drivers    out-of-tree kernel modules, built and signed by DKMS
-#   8. secrets    per-machine state that never enters the repo
+#   7. secrets    per-machine state that never enters the repo
 #
 # Paths: "~/x" is under $HOME; other paths are relative to this repo.
 
@@ -39,7 +38,6 @@ gpg-signing = true
 groups      = ["core", "build", "embedded", "ai", "gui"]
 desktop     = "KDE Plasma (Wayland)"
 hostname    = "cdi"                 # static: a DHCP-assigned one strands gpg's lock files
-drivers     = ["redmi-battery-care"]
 btrfs-quota = false                 # qgroups make snapper's snapshot deletes stall the system
 polkit      = ["50-firewalld-info.rules"]   # from system/polkit/ into /etc/polkit-1/rules.d/
 kernel-args = ["loglevel=3", "rd.udev.log_level=3", "systemd.show_status=auto"]  # quiet boot: hide firmware X.509 noise
@@ -67,7 +65,7 @@ build    = ["go", "python", "java", "c++", "rust", "dotnet", "node", "pnpm", "lu
             "ocaml", "r", "racket", "julia", "flutter", "duckdb"]
 embedded = ["cross-riscv64", "cross-aarch64", "mingw64", "qemu", "asm-dt"]
 ai       = ["claude", "codex", "pi", "agy"]
-gui      = ["ime", "calc", "wl-copy", "pinentry-qt6", "fonts", "vulkan-tools", "code", "edge",
+gui      = ["ime", "calc", "wl-copy", "pinentry-qt6", "fonts", "nerd-font", "vulkan-tools", "code", "edge",
             "kdeconnect", "awatcher", "openvpn", "calibre", "zotero"]
 wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
 
@@ -151,6 +149,8 @@ pinentry-qt6 = { zypper = ["pinentry-qt6"] }
 fonts        = { zypper = ["google-noto-sans-fonts", "google-noto-serif-fonts", "google-noto-sans-cjk-fonts",
                            "adobe-sourcehanserif-cn-fonts", "google-noto-coloremoji-fonts",
                            "jetbrains-mono-fonts", "nerdfonts-symbolsonly-fonts"] }
+nerd-font    = { github = "ryanoasis/nerd-fonts", asset = "JetBrainsMono.tar.xz", font = "~/.local/share/fonts/JetBrainsMonoNerd" }
+                                                            # "JetBrainsMono Nerd Font (Mono)"; not in the repos
 vulkan-tools = { zypper = ["vulkan-tools"] }
 code         = { zypper = ["code"], repo = "vscode" }       # settings via VS Code Settings Sync
 edge         = { zypper = ["microsoft-edge-stable"], repo = "edge" }
@@ -195,6 +195,7 @@ microsoft-prod = { url = "https://packages.microsoft.com/opensuse/16/prod/",    
 "config/clangd"       = "~/.config/clangd"
 "config/fontconfig"   = "~/.config/fontconfig"   # files linked one by one; KDE owns fonts.conf
 "config/clang-format" = "~/.clang-format"
+"config/clang-tidy"   = "~/.clang-tidy"     # default checks; a project's own .clang-tidy wins
 "config/ssh/config"   = "~/.ssh/config"
 "config/plasma-workspace" = "~/.config/plasma-workspace"   # sourced only by Plasma
 
@@ -211,11 +212,13 @@ name       = "hortensia"
 # ─────────────────────────────────────────────────────────────────────────────
 # Only settings chosen on purpose, written key by key with kwriteconfig6: KDE
 # rewrites its rc files (a symlink would be replaced) and mixes in state like
-# window sizes. Not here: display scale, tiling, the panel (set by hand).
+# window sizes. Not here: display scale, tiling (set by hand).
 #   [kde.settings.<file>.<group>]  key = value      file in ~/.config
 
 [kde]
 look-and-feel = "org.kde.breezedark.desktop"    # plasma-apply-lookandfeel: colours, icons, decorations
+panels        = "config/plasmashell/panels.js"  # macOS-style menu bar + dock; run in plasmashell only while
+                                                # there is no top panel, so later tweaks by hand are kept
 
 [kde.settings.kdeglobals.General]               # fonts: CJK-capable UI font, JetBrains Mono
 font                 = "Noto Sans CJK SC,10,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,,0,0"
@@ -278,6 +281,28 @@ Icon       = "~/.local/share/zotero/icons/icon128.png"
 Categories = "Office;Education;Literature;"
 MimeType   = "x-scheme-handler/zotero;"
 
+# VS Code through XWayland, so its menu goes to the top bar (Electron exports it only on
+# X11); same name as the system entry, which this one shadows, so the dock pin still works.
+# Also needs "window.titleBarStyle": "native" and "window.customTitleBarVisibility": "never"
+# in VS Code (kept out of Settings Sync): its own title bar would stop the menu export.
+[kde.settings."~/.local/share/applications/com.microsoft.VSCode.desktop"."Desktop Entry"]
+Type           = "Application"
+Name           = "Visual Studio Code"
+GenericName    = "Text Editor"
+Exec           = "/usr/share/code/code --ozone-platform=x11 %F"
+Icon           = "vscode"
+StartupNotify  = false
+StartupWMClass = "com.microsoft.VSCode"
+Categories     = "TextEditor;Development;IDE;"
+MimeType       = "application/x-code-workspace;"
+Actions        = "new-empty-window;"
+Keywords       = "vscode;"
+
+[kde.settings."~/.local/share/applications/com.microsoft.VSCode.desktop"."Desktop Action new-empty-window"]
+Name = "New Empty Window"
+Exec = "/usr/share/code/code --ozone-platform=x11 --new-window %F"
+Icon = "vscode"
+
 [kde.settings.dolphinrc.General]
 ShowFullPath = true
 
@@ -315,18 +340,7 @@ baloosearchEnabled = false
 locationsEnabled   = false
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Drivers
-# ─────────────────────────────────────────────────────────────────────────────
-# Kernel modules from system/<name>/ (with a dkms.conf). DKMS rebuilds them for
-# each new kernel and signs them with /var/lib/dkms/mok.pub, which is enrolled
-# once (a reboot into the blue MOK screen) so Secure Boot stays on. Installed
-# only where the DMI product name contains `hardware`; loaded at every boot.
-
-[drivers.redmi-battery-care]        # charge limit (firmware "battery care"), on at load
-hardware = "Redmi Book"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 8. Secrets
+# 7. Secrets
 # ─────────────────────────────────────────────────────────────────────────────
 # Never in the repo, never copied: created fresh on each machine, the public
 # halves registered with GitHub. `apply` lists the ones still missing.

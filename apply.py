@@ -304,52 +304,6 @@ def polkit_steps(machine: dict) -> list[Step]:
     return steps
 
 
-def driver_steps(spec: dict, machine: dict) -> list[Step]:
-    """[drivers]: DKMS modules from system/<name>/, signed with an enrolled MOK, loaded at boot."""
-    dmi = Path("/sys/class/dmi/id/product_name")
-    product = dmi.read_text() if dmi.exists() else ""
-    kernel = os.uname().release
-    steps: list[Step] = []
-    built = [n for n in machine.get("drivers", []) if spec["drivers"][n]["hardware"] in product]
-    for name in built:
-        src = REPO / "system" / name
-        conf = (src / "dkms.conf").read_text()
-        ver = re.search(r'PACKAGE_VERSION="([^"]+)"', conf)[1]
-        mod = re.search(r'BUILT_MODULE_NAME\[0\]="([^"]+)"', conf)[1]
-        dst = Path(f"/usr/src/{name}-{ver}")
-
-        pkgs = ["kernel-default-devel", "dkms", "mokutil"]
-        missing = [p for p in pkgs if p not in out(["rpm", "-q", "--qf", "%{NAME}\n", *pkgs]).split()]
-        if missing:
-            steps.append(Step(f"{name}: zypper install {' '.join(missing)}",
-                              lambda m=missing: run(["sudo", "zypper", "-n", "install", *m])))
-
-        files = sorted(p.name for p in src.iterdir() if p.is_file())
-        same = dst.is_dir() and sorted(p.name for p in dst.iterdir() if p.is_file()) == files and \
-            all((src / f).read_bytes() == (dst / f).read_bytes() for f in files)
-        dkms = shutil.which("dkms") or "/usr/sbin/dkms"   # sbin is not on a user's PATH
-        installed = "installed" in out([dkms, "status", "-m", name, "-v", ver, "-k", kernel])
-        if not same or not installed:
-            q = shlex.quote
-            steps.append(Step(f"{name}: dkms build + sign for {kernel}, load {mod}", lambda q=q, d=dst, s=src, n=name, v=ver, m=mod: (
-                run(f"sudo rm -rf {q(str(d))} && sudo cp -r {q(str(s))} {q(str(d))}"),
-                run(f"sudo dkms remove {n}/{v} --all >/dev/null 2>&1 || true"),
-                run(["sudo", "dkms", "install", f"{n}/{v}", "--force"]),
-                run(f"sudo modprobe -r {m} 2>/dev/null; sudo modprobe {m} || echo '    (loads after the MOK is enrolled)'"))))
-
-        load = Path(f"/etc/modules-load.d/{name}.conf")
-        if not load.exists() or load.read_text().strip() != mod:
-            steps.append(Step(f"{name}: load {mod} at boot", lambda l=load, m=mod:
-                              run(["sudo", "tee", str(l)], input=m + "\n", quiet=True)))
-
-    key = "/var/lib/dkms/mok.pub"
-    if built and "already enrolled" not in out(["mokutil", "--test-key", key]):
-        steps.append(Step("dkms: enroll signing key (pick a one-time password; reboot, then "
-                          "Enroll MOK -> Continue -> Yes -> password)",
-                          lambda: run(["sudo", "mokutil", "--import", key])))
-    return steps
-
-
 def kde_steps(spec: dict, machine: dict) -> list[Step]:
     """[kde] settings, on machines whose desktop is KDE Plasma (once Plasma is installed)."""
     if not str(machine.get("desktop", "")).startswith("KDE") or not have("kwriteconfig6"):
@@ -371,7 +325,22 @@ def kde_steps(spec: dict, machine: dict) -> list[Step]:
                             *(["--type", "bool"] if isinstance(v, bool) else []), val]
                     steps.append(Step(f"kde: {f} [{tilde(Path(g)) if g.startswith('/') else g}] {k} = {val}",
                                       lambda a=args: run(a)))
+    panels = kde.get("panels")
+    if panels and not top_panel() and out(["qdbus6", "org.kde.plasmashell", "/PlasmaShell"]):
+        # needs a running plasmashell: done at the first apply after login
+        steps.append(Step(f"kde: panels from {panels}", lambda: run(
+            ["sh", "-c", 'qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "$(cat "$1")"',
+             "sh", str(REPO / panels)], quiet=True)))
     return steps
+
+
+def top_panel() -> bool:
+    """Whether Plasma has a panel at the top edge (location 3) on any screen."""
+    rc = Path.home() / ".config/plasma-org.kde.plasma.desktop-appletsrc"
+    text = rc.read_text() if rc.exists() else ""
+    heads = [body.split("\n[")[0] for body in re.split(r"^\[Containments\]\[\d+\]$", text, flags=re.M)[1:]]
+    return any(re.search(r"^plugin=org\.kde\.panel$", h, re.M) and re.search(r"^location=3$", h, re.M)
+               for h in heads)
 
 
 def zypper_steps(spec: dict, tools: list[str]) -> list[Step]:
@@ -458,6 +427,23 @@ def install_release(name: str, url: str, bindir: Path, unpack: Path | None = Non
     tmp.replace(dst)
 
 
+def install_font(url: str, fontdir: Path) -> None:
+    """Put the .ttf/.otf files of a font archive into fontdir (replacing it) and refresh fontconfig."""
+    data = fetch(url)
+    tmp = fontdir.with_name(fontdir.name + ".tmp")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+        for m in tf.getmembers():
+            if m.isfile() and m.name.lower().endswith((".ttf", ".otf")):
+                (tmp / Path(m.name).name).write_bytes(tf.extractfile(m).read())
+    if not any(tmp.iterdir()):
+        raise Failed("no font files in the download")
+    shutil.rmtree(fontdir, ignore_errors=True)
+    tmp.replace(fontdir)
+    run(["fc-cache", "-f", str(fontdir)])
+
+
 def latest_tag(repo: str) -> str:
     """The tag GitHub's /releases/latest redirects to (no API call, no rate limit)."""
     req = urllib.request.Request(f"https://github.com/{repo}/releases/latest", method="HEAD")
@@ -474,7 +460,10 @@ def install_github(t: str, cfg: dict, tag: str | None = None) -> None:
     """Latest (or the given) release of a `github` tool; its tag is remembered for --update."""
     tag = tag or latest_tag(cfg["github"])
     url = f"https://github.com/{cfg['github']}/releases/download/{tag}/{cfg['asset']}"
-    install_release(t, url, expand(cfg.get("bin", "~/.local/bin")), expand(cfg["dir"]) if "dir" in cfg else None)
+    if "font" in cfg:
+        install_font(url, expand(cfg["font"]))
+    else:
+        install_release(t, url, expand(cfg.get("bin", "~/.local/bin")), expand(cfg["dir"]) if "dir" in cfg else None)
     f = STATE / "releases" / t
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(tag + "\n")
@@ -524,7 +513,11 @@ def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
     s: list[Step] = []
     if "installer" in cfg and not have(t):
         s.append(Step(f"{t}: run {cfg['installer']}", lambda u=cfg["installer"]: run_script(u)))
-    if "github" in cfg:
+    if "github" in cfg and "font" in cfg:
+        if not expand(cfg["font"]).exists():
+            s.append(Step(f"{t}: latest {cfg['github']} {cfg['asset']} -> {cfg['font']}",
+                          lambda t=t, c=cfg: install_github(t, c)))
+    elif "github" in cfg:
         bindir = expand(cfg.get("bin", "~/.local/bin"))
         if not have(t) and not (bindir / t).exists():
             unpack = expand(cfg["dir"]) if "dir" in cfg else None
@@ -627,7 +620,7 @@ def update_steps(spec: dict, machine: dict, tools: list[str], dry_run: bool) -> 
 
     for t in machine.get("bootstrap", []) + users["github"]:
         cfg = T[t]
-        exe = expand(cfg.get("bin", "~/.local/bin")) / t
+        exe = expand(cfg["font"]) if "font" in cfg else expand(cfg.get("bin", "~/.local/bin")) / t
         if not exe.exists():
             continue                                   # not ours (e.g. a system copy)
         try:
@@ -636,7 +629,7 @@ def update_steps(spec: dict, machine: dict, tools: list[str], dry_run: bool) -> 
             print(f"  ({t}: cannot check {cfg['github']}: {e})")
             continue
         have_tag = installed_tag(t)
-        if have_tag is None and re.search(rf"(?<![\d.]){re.escape(tag.lstrip('v'))}(?![\d.])", out([str(exe), "--version"])):
+        if have_tag is None and "font" not in cfg and re.search(rf"(?<![\d.]){re.escape(tag.lstrip('v'))}(?![\d.])", out([str(exe), "--version"])):
             have_tag = tag                             # installed before tags were recorded, already latest
             if not dry_run:
                 (STATE / "releases").mkdir(parents=True, exist_ok=True)
@@ -728,11 +721,6 @@ def validate(spec: dict) -> list[str]:
         for t in [t for g in v["groups"] for t in G.get(g, [])] + v.get("bootstrap", []):
             if t not in T:
                 errs.append(f"machine {m}: tool {t} has no [tools] entry")
-        for d in v.get("drivers", []):
-            if d not in spec.get("drivers", {}):
-                errs.append(f"machine {m}: driver {d} has no [drivers] entry")
-            elif not (REPO / "system" / d / "dkms.conf").exists():
-                errs.append(f"driver {d}: system/{d}/dkms.conf does not exist")
     for t, cfg in T.items():
         if "repo" in cfg and cfg["repo"] not in R:
             errs.append(f"tool {t}: unknown repo {cfg['repo']}")
@@ -772,7 +760,7 @@ def main() -> int:
     parts: list[tuple[str, Callable[[], list[Step]]]] = [
         ("links", lambda: link_steps(spec, backup) + bashrc_step(spec) + git_identity_steps(spec, machine) + machine_link_steps(machine)),
         ("system", lambda: (wsl_conf_steps(machine) + zypper_steps(spec, tools) + hostname_steps(machine)
-                            + driver_steps(spec, machine) + btrfs_quota_steps(machine) + polkit_steps(machine)
+                            + btrfs_quota_steps(machine) + polkit_steps(machine)
                             + kernel_args_steps(machine)) if machine.get("sudo") else []),
         ("tools", lambda: tool_steps(spec, machine, tools)),
         ("desktop", lambda: kde_steps(spec, machine)),
