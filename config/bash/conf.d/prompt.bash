@@ -1,5 +1,5 @@
 # Same prompt as fish_prompt.fish:
-#   ❰user ~/path (git ↑ ↓ + * x > = ? branch)❱ ✓ λ
+#   ❰user@host ~/path (git ↑ ↓ + * x > = ? branch)❱ ✓ λ
 # Git info from one `git status --porcelain=v2 --branch`; nothing extra when clean.
 [[ $- == *i* ]] || return 0
 
@@ -44,7 +44,7 @@ __dotfiles_prompt() {
     # Bold and the black background stay on until the final reset (like set_color).
     # Git info stays in a variable PS1 only references: a branch named like $(cmd)
     # is shown, never run.
-    PS1="$bg_black$bold$white❰$green\\u$white $yellow\\w$white"'${__dotfiles_git}'"$white❱ "'${__dotfiles_status}'"λ$reset "
+    PS1="$bg_black$bold$white❰$green\\u@\\h$white $yellow\\w$white"'${__dotfiles_git}'"$white❱ "'${__dotfiles_status}'"λ$reset "
 }
 
 case ";${PROMPT_COMMAND:-};" in

@@ -37,6 +37,11 @@ USER_PATHS = [LOCAL_BIN, HOME / ".pixi/bin", PNPM_HOME / "bin", PNPM_HOME,
 SDKMAN = HOME / ".sdkman"
 SUDO_PROVIDERS = ("zypper",)
 
+# Python's default User-Agent is refused by some hosts (claude.ai answers 403).
+_opener = urllib.request.build_opener()
+_opener.addheaders = [("User-Agent", "dotfiles-apply")]
+urllib.request.install_opener(_opener)
+
 
 def expand(p: str) -> Path:
     return Path(os.path.expanduser(p)) if p.startswith("~") else REPO / p
@@ -151,6 +156,28 @@ def bashrc_step(spec: dict) -> list[Step]:
         text = rc.read_text() if rc.exists() else ""
         rc.write_text(text + ("" if text.endswith("\n") or not text else "\n") + line + "\n")
     return [Step("~/.bashrc: add the dotfiles line", do)]
+
+
+def login_file() -> Path:
+    """The file a login bash reads: the first of these that exists."""
+    for name in (".bash_profile", ".bash_login", ".profile"):
+        if (HOME / name).exists():
+            return HOME / name
+    return HOME / ".bash_profile"
+
+
+def bash_login_step(spec: dict) -> list[Step]:
+    # A login bash reads only its login file; most distros' default one sources ~/.bashrc,
+    # some sites' don't. Leave it alone if it already mentions .bashrc. The line loads
+    # dotfiles.bash, never ~/.bashrc: a site's ~/.bashrc may source the login file.
+    f, line = login_file(), spec["bashrc"]["login"]
+    if f.exists() and (".bashrc" in f.read_text() or line in f.read_text().splitlines()):
+        return []
+
+    def do() -> None:
+        text = f.read_text() if f.exists() else ""
+        f.write_text(text + ("" if text.endswith("\n") or not text else "\n") + line + "\n")
+    return [Step(f"{tilde(f)}: add the dotfiles line", do)]
 
 
 def git_identity_steps(spec: dict, machine: dict) -> list[Step]:
@@ -772,7 +799,7 @@ def main() -> int:
 
     backup = HOME / ".dotfiles-backup" / time.strftime("%Y%m%d-%H%M%S")
     parts: list[tuple[str, Callable[[], list[Step]]]] = [
-        ("links", lambda: link_steps(spec, backup) + bashrc_step(spec) + git_identity_steps(spec, machine) + machine_link_steps(machine)),
+        ("links", lambda: link_steps(spec, backup) + bashrc_step(spec) + bash_login_step(spec) + git_identity_steps(spec, machine) + machine_link_steps(machine)),
         ("system", lambda: (wsl_conf_steps(machine) + zypper_steps(spec, tools) + hostname_steps(machine)
                             + btrfs_quota_steps(machine) + polkit_steps(machine)
                             + kernel_args_steps(machine)) if machine.get("sudo") else []),
@@ -783,7 +810,12 @@ def main() -> int:
         parts.append(("update", lambda: update_steps(spec, machine, tools, args.dry_run)))
 
     print(f"machine: {mname} ({', '.join(machine['groups'])})")
-    rc_before = {f: f.read_text() if f.exists() else None for f in (HOME / ".bashrc", HOME / ".profile")}
+    # To notice installers editing shell startup files; apply's own lines don't count.
+    ours = {spec["bashrc"]["line"], spec["bashrc"]["login"]}
+    def rc_text(f: Path) -> str | None:
+        return "\n".join(l for l in f.read_text().splitlines() if l not in ours) if f.exists() else None
+    rc_files = {HOME / ".bashrc", HOME / ".profile", login_file()}
+    rc_before = {f: rc_text(f) for f in rc_files}
     if not args.dry_run:
         STATE.mkdir(parents=True, exist_ok=True)
         saved.write_text(mname + "\n")
@@ -814,9 +846,8 @@ def main() -> int:
         print("\nnote: log out and back in for all KDE settings to take effect.")
     if not args.dry_run:
         for f, before in rc_before.items():
-            after = f.read_text() if f.exists() else None
-            if before is not None and after != before and args.only != "links":
-                print(f"\nnote: an installer changed {tilde(f)}; only the dotfiles line is wanted there.")
+            if before is not None and rc_text(f) != before:
+                print(f"\nnote: an installer changed {tilde(f)}; only the dotfiles lines are wanted there.")
 
     if failed:
         print("\n== update: failed (the rest went ahead):\n  - " + "\n  - ".join(failed))

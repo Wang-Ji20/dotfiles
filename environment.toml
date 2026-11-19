@@ -210,8 +210,12 @@ microsoft-prod = { url = "https://packages.microsoft.com/opensuse/16/prod/",    
 "config/plasma-workspace" = "~/.config/plasma-workspace"   # sourced only by Plasma
 "config/bin"          = "~/.local/bin"            # own scripts, linked one by one
 
-[bashrc]                            # the only line managed in ~/.bashrc
-line = "[ -f ~/.config/bash/dotfiles.bash ] && . ~/.config/bash/dotfiles.bash"
+[bashrc]                            # the only lines managed in bash's startup files
+line  = "[ -f ~/.config/bash/dotfiles.bash ] && . ~/.config/bash/dotfiles.bash"   # in ~/.bashrc
+login = '[ -n "$BASH_VERSION" ] && [ -f ~/.config/bash/dotfiles.bash ] && . ~/.config/bash/dotfiles.bash'
+# `login` goes into the file a login bash reads (~/.bash_profile, ~/.bash_login or ~/.profile,
+# the first that exists), unless that file already sources ~/.bashrc. It loads dotfiles.bash,
+# not ~/.bashrc: some sites' ~/.bashrc sources ~/.bash_profile, which would make a loop.
 
 [git-identity]                      # ~/.gitconfig, per machine: created if missing
 name       = "hortensia"

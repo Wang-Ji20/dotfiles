@@ -1,4 +1,4 @@
-# ❰user cwd (git status branch)❱ ✓ λ
+# ❰user@host cwd (git status branch)❱ ✓ λ
 #
 # Git info comes from ONE call: `git status --porcelain=v2 --branch`.
 # Its output, line by line (see `git help status`, section "Porcelain Format Version 2"):
@@ -59,8 +59,8 @@ function fish_prompt --description 'Write out the prompt'
     or set -lx fish_prompt_pwd_dir_length 0
 
     set_color -b normal
-    printf '%s❰%s%s %s%s%s%s❱ ' \
-        (set_color -o white) (set_color green) $USER \
+    printf '%s❰%s%s@%s %s%s%s%s❱ ' \
+        (set_color -o white) (set_color green) $USER (prompt_hostname) \
         (set_color yellow) (prompt_pwd) \
         $git_info (set_color -o white)
     if test $laststatus -eq 0

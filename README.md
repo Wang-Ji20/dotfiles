@@ -32,7 +32,9 @@ differs, so it also repairs drift. `--only links|system|tools|desktop` runs one 
   `[links]`. Anything they replace is moved to `~/.dotfiles-backup/<time>/`. Links whose
   file was removed from the repo are cleaned up.
 - **One line in `~/.bashrc`** loads `~/.config/bash/dotfiles.bash`; the rest of the file
-  (e.g. a lab's site setup) is left alone.
+  (e.g. a lab's site setup) is left alone. If the file a login bash reads (`~/.bash_profile`,
+  `~/.bash_login` or `~/.profile`) doesn't source `~/.bashrc`, it gets a line that loads `dotfiles.bash` directly (not `~/.bashrc`,
+  which on some sites sources the login file itself). `dotfiles.bash` loads once per shell.
 - **Git identity** lives in `~/.gitconfig`, which is per machine and not in the repo;
   the shared settings are in `~/.config/git/`.
 - **Tools.** Each machine has groups of tools (`[groups]`); `[tools]` says how each one is
