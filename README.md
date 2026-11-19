@@ -45,7 +45,7 @@ differs, so it also repairs drift. `--only links|system|tools|desktop` runs one 
   uv, pnpm, rustup, sdkman, ghcup, opam, juliaup, git checkouts, `claude update`, the other
   official installers again, and GitHub releases newer than the tag recorded in
   `~/.local/state/dotfiles/releases/`. Update steps don't depend on each other: one failing
-  is reported at the end, the rest still run.
+  is reported at the end, the rest still run. `archive` tools (Zotero) update themselves.
 - **Drivers.** Kernel modules in `system/<name>/` (see `[drivers]`) are built and signed
   by DKMS, so Secure Boot stays on and new kernels rebuild them. The signing key is
   enrolled once: `apply` runs `mokutil --import`, then reboot and confirm on the blue

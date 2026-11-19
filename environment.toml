@@ -68,7 +68,7 @@ build    = ["go", "python", "java", "c++", "rust", "dotnet", "node", "pnpm", "lu
 embedded = ["cross-riscv64", "cross-aarch64", "mingw64", "qemu", "asm-dt"]
 ai       = ["claude", "codex", "pi", "agy"]
 gui      = ["ime", "calc", "wl-copy", "pinentry-qt6", "fonts", "vulkan-tools", "code", "edge",
-            "kdeconnect", "awatcher", "openvpn"]
+            "kdeconnect", "awatcher", "openvpn", "calibre", "zotero"]
 wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +86,8 @@ wsl      = ["wsl-systemd", "wsl-gui", "wl-copy"]
 #   installer = "url"               official install script
 #   github    = "owner/repo"        latest release, file `asset`, into ~/.local/bin (or `bin`)
 #               dir = "~/x"         unpack the whole archive there, link the binary into bin
+#   archive   = "url"               a .tar.* unpacked into `dir`, binary linked into bin; for
+#                                   programs that update themselves (left alone by --update)
 #   rustup / sdkman / ghcup / opam / juliaup / git = ...       that manager's settings
 # Versions: always the latest (or the manager's "recommended"); `min` only guards
 # against system copies too old for the config.
@@ -156,6 +158,9 @@ kdeconnect   = { zypper = ["kdeconnect-kde"], firewall = "kdeconnect" }
 openvpn      = { zypper = ["openvpn", "NetworkManager-openvpn", "plasma6-nm-openvpn"] }   # import .ovpn in Plasma's network settings
 awatcher     = { github = "2e3s/awatcher", asset = "awatcher-bundle.zip" }   # ActivityWatch server + web UI + tray in one binary;
                                                                          # its window watcher works on KDE Wayland (KWin script)
+calibre      = { zypper = ["calibre"] }
+zotero       = { archive = "https://www.zotero.org/download/client/dl?channel=release&platform=linux-x86_64", dir = "~/.local/share/zotero" }
+                                                            # official build (not in the repos); updates itself
 
 # wsl
 wsl-systemd = { zypper = ["patterns-wsl-systemd"] }
@@ -264,6 +269,14 @@ Name    = "ActivityWatch (awatcher)"
 Exec    = "~/.local/bin/awatcher"               # full path: the xdg-autostart generator's PATH lacks ~/.local/bin
 Icon    = "activitywatch"
 Comment = "Tracks active window and idle time"
+
+[kde.settings."~/.local/share/applications/zotero.desktop"."Desktop Entry"]   # menu entry for the tarball build
+Type       = "Application"
+Name       = "Zotero"
+Exec       = "~/.local/share/zotero/zotero -url %U"
+Icon       = "~/.local/share/zotero/icons/icon128.png"
+Categories = "Office;Education;Literature;"
+MimeType   = "x-scheme-handler/zotero;"
 
 [kde.settings.dolphinrc.General]
 ShowFullPath = true

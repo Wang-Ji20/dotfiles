@@ -361,6 +361,7 @@ def kde_steps(spec: dict, machine: dict) -> list[Step]:
     if laf and read("kdeglobals", "KDE", "LookAndFeelPackage") != laf:
         steps.append(Step(f"kde: look and feel {laf}", lambda: run(["plasma-apply-lookandfeel", "-a", laf])))
     for f, groups in kde.get("settings", {}).items():
+        f = os.path.expanduser(f)            # "~/.local/share/applications/x.desktop"; else under ~/.config
         for group, keys in groups.items():
             g = os.path.expanduser(group)
             for k, v in keys.items():
@@ -429,10 +430,14 @@ def install_release(name: str, url: str, bindir: Path, unpack: Path | None = Non
         tmpdir.mkdir(parents=True)
         with tarfile.open(fileobj=io.BytesIO(data)) as tf:
             tf.extractall(tmpdir, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
-        if not (tmpdir / name).is_file():
+        top = tmpdir
+        if not (top / name).is_file() and len(subs := list(tmpdir.iterdir())) == 1 and subs[0].is_dir():
+            top = subs[0]                    # archive wraps everything in one folder (Zotero_linux-x86_64/)
+        if not (top / name).is_file():
             raise Failed(f"no {name} at the top of the download")
         shutil.rmtree(unpack, ignore_errors=True)
-        tmpdir.replace(unpack)
+        top.replace(unpack)
+        shutil.rmtree(tmpdir, ignore_errors=True)
         dst.unlink(missing_ok=True)
         dst.symlink_to(unpack / name)
         return
@@ -525,6 +530,11 @@ def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
             unpack = expand(cfg["dir"]) if "dir" in cfg else None
             s.append(Step(f"{t}: latest {cfg['github']} release -> {tilde(unpack or bindir)}",
                           lambda t=t, c=cfg: install_github(t, c)))
+    if "archive" in cfg:
+        unpack = expand(cfg["dir"])
+        if not (unpack / t).exists():
+            s.append(Step(f"{t}: {cfg['archive']} -> {tilde(unpack)}", lambda t=t, c=cfg, d=unpack: install_release(
+                t, c["archive"], expand(c.get("bin", "~/.local/bin")), d)))
     # uv lists normalized names (huggingface_hub -> huggingface-hub).
     norm = lambda n: re.sub(r"[-_.]+", "-", n).lower()
     if "uv" in cfg and norm(cfg["uv"]) not in {norm(l.split()[0]) for l in out(["uv", "tool", "list"]).splitlines() if l and not l.startswith("-")}:
