@@ -32,7 +32,7 @@ links       = { "~/.aws" = "/mnt/c/Users/Ji Wang/.aws", "~/.azure" = "/mnt/c/Use
 [machines.desktop]
 os          = "openSUSE Tumbleweed"
 arch        = "x86_64"
-user        = "jiwang"
+user        = "ji"
 sudo        = true
 login-shell = "fish"
 gpg-signing = true
@@ -40,6 +40,8 @@ groups      = ["core", "build", "embedded", "ai", "gui"]
 desktop     = "KDE Plasma (Wayland)"
 hostname    = "cdi"                 # static: a DHCP-assigned one strands gpg's lock files
 drivers     = ["redmi-battery-care"]
+btrfs-quota = false                 # qgroups make snapper's snapshot deletes stall the system
+polkit      = ["50-firewalld-info.rules"]   # from system/polkit/ into /etc/polkit-1/rules.d/
 
 [machines.lab]                      # shared servers, incl. an EasyBuild/Lmod cluster
 os          = "RHEL 9 / Ubuntu"     # glibc >= 2.34
@@ -133,7 +135,7 @@ asm-dt        = { zypper = ["nasm", "dtc"] }
 
 # ai — standalone builds in $HOME (no node, no root)
 claude = { installer = "https://claude.ai/install.sh" }
-codex  = { github = "openai/codex", asset = "codex-x86_64-unknown-linux-musl.tar.gz" }
+codex  = { installer = "https://github.com/openai/codex/releases/latest/download/install.sh" }   # full package in ~/.codex/packages
 pi     = { installer = "https://pi.dev/install.sh", conda = "pi-coding-agent" }
 agy    = { installer = "https://antigravity.google/cli/install.sh" }
 
@@ -182,6 +184,7 @@ microsoft-prod = { url = "https://packages.microsoft.com/opensuse/16/prod/",    
 "config/git"          = "~/.config/git"
 "config/gh"           = "~/.config/gh"
 "config/clangd"       = "~/.config/clangd"
+"config/fontconfig"   = "~/.config/fontconfig"   # files linked one by one; KDE owns fonts.conf
 "config/clang-format" = "~/.clang-format"
 "config/ssh/config"   = "~/.ssh/config"
 "config/plasma-workspace" = "~/.config/plasma-workspace"   # sourced only by Plasma
@@ -305,6 +308,7 @@ hardware = "Redmi Book"
 # halves registered with GitHub. `apply` lists the ones still missing.
 
 [secrets]
+ssh-hosts = "~/.ssh/config.local"            # private hosts; ~/.ssh/config includes it
 ssh-key   = "~/.ssh/id_ed25519"              # ssh-keygen, then gh auth login uploads it
 gpg-key   = "per machine"                   # machines with gpg-signing only; see [git-identity]
 git-email = "~/.gitconfig"

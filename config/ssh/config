@@ -1,10 +1,9 @@
-# ~/.ssh/config — hosts only; keys stay per machine.
+# ~/.ssh/config — shared and public: nothing here may name a private host.
+# Private hosts go in ~/.ssh/config.local (per machine, never in the repo).
+# Keys stay per machine.
+
+Include ~/.ssh/config.local
 
 Host github.com
   Hostname ssh.github.com
   Port 443
-
-Host quant
-  Hostname connect.bjb1.seetacloud.com
-  Port 57990
-  User root

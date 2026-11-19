@@ -1,0 +1,10 @@
+// Let the active local user read firewalld's configuration without a password.
+// openSUSE links firewalld's "server" polkit policy, under which even reading
+// zones/services (config.info, policies.info, direct.info) asks for root, so
+// any desktop UI that shows firewall state prompts. Changes still need auth.
+polkit.addRule(function (action, subject) {
+    if (/^org\.fedoraproject\.FirewallD1\.(config|direct|policies)\.info$/.test(action.id) &&
+        subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});

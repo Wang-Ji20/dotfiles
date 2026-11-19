@@ -242,6 +242,40 @@ def hostname_steps(machine: dict) -> list[Step]:
     return [Step(f"hostname {h}", lambda: run(["sudo", "hostnamectl", "set-hostname", h]))]
 
 
+def btrfs_quota_steps(machine: dict) -> list[Step]:
+    """btrfs-quota = false: no qgroups on /, and snapper not relying on them.
+    With qgroups, every snapshot delete makes btrfs-cleaner pin a core and stall writes."""
+    if machine.get("btrfs-quota", True):
+        return []
+    steps: list[Step] = []
+    snapper = Path("/etc/snapper/configs/root")
+    if snapper.exists() and re.search(r'^QGROUP="[^"]+"', snapper.read_text(), re.M):
+        steps.append(Step("snapper: stop using qgroups (QGROUP=\"\")", lambda: run(
+            ["sudo", "sed", "-i", 's/^QGROUP=.*/QGROUP=""/', str(snapper)])))
+    uuid = out(["findmnt", "-no", "UUID", "/"]).strip()
+    if uuid and Path(f"/sys/fs/btrfs/{uuid}/qgroups").exists():
+        steps.append(Step("btrfs: disable quota on /", lambda: run(["sudo", "btrfs", "quota", "disable", "/"])))
+    return steps
+
+
+def polkit_steps(machine: dict) -> list[Step]:
+    """polkit = [...]: rule files from system/polkit/ copied into /etc/polkit-1/rules.d/."""
+    steps: list[Step] = []
+    for name in machine.get("polkit", []):
+        src, dst = REPO / "system/polkit" / name, Path("/etc/polkit-1/rules.d") / name
+        # rules.d is root:polkitd 750, so compare against a copy of what we last installed.
+        seen = STATE / "polkit" / name
+        if seen.exists() and seen.read_bytes() == src.read_bytes():
+            continue
+
+        def do(s: Path = src, d: Path = dst, k: Path = seen) -> None:
+            run(["sudo", "install", "-m", "644", str(s), str(d)])
+            k.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(s, k)
+        steps.append(Step(f"polkit: install {name}", do))
+    return steps
+
+
 def driver_steps(spec: dict, machine: dict) -> list[Step]:
     """[drivers]: DKMS modules from system/<name>/, signed with an enrolled MOK, loaded at boot."""
     dmi = Path("/sys/class/dmi/id/product_name")
@@ -443,7 +477,9 @@ def provider_steps(t: str, cfg: dict, sudo: bool) -> list[Step]:
             unpack = expand(cfg["dir"]) if "dir" in cfg else None
             s.append(Step(f"{t}: latest {cfg['github']} release -> {tilde(unpack or bindir)}",
                           lambda t=t, u=url, b=bindir, d=unpack: install_release(t, u, b, d)))
-    if "uv" in cfg and cfg["uv"] not in out(["uv", "tool", "list"]):
+    # uv lists normalized names (huggingface_hub -> huggingface-hub).
+    norm = lambda n: re.sub(r"[-_.]+", "-", n).lower()
+    if "uv" in cfg and norm(cfg["uv"]) not in {norm(l.split()[0]) for l in out(["uv", "tool", "list"]).splitlines() if l and not l.startswith("-")}:
         s.append(Step(f"{t}: uv tool install {cfg['uv']}", lambda p=cfg["uv"]: run(["uv", "tool", "install", p])))
     if "uv-python" in cfg and not out(["uv", "python", "list", "--only-installed"]).strip():
         s.append(Step(f"{t}: uv python install", lambda: run(["uv", "python", "install"])))
@@ -586,7 +622,7 @@ def main() -> int:
     parts: list[tuple[str, Callable[[], list[Step]]]] = [
         ("links", lambda: link_steps(spec, backup) + bashrc_step(spec) + git_identity_steps(spec, machine) + machine_link_steps(machine)),
         ("system", lambda: (wsl_conf_steps(machine) + zypper_steps(spec, tools) + hostname_steps(machine)
-                            + driver_steps(spec, machine)) if machine.get("sudo") else []),
+                            + driver_steps(spec, machine) + btrfs_quota_steps(machine) + polkit_steps(machine)) if machine.get("sudo") else []),
         ("tools", lambda: tool_steps(spec, machine, tools)),
         ("desktop", lambda: kde_steps(spec, machine)),
     ]
